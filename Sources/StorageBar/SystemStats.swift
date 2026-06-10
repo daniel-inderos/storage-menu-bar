@@ -1,4 +1,5 @@
 import Foundation
+import IOKit
 import IOKit.ps
 
 struct DiskInfo {
@@ -12,6 +13,19 @@ struct DiskInfo {
     var used: Int64 { max(0, total - available) }
     var purgeable: Int64 { max(0, available - free) }
     var usedFraction: Double { total > 0 ? Double(used) / Double(total) : 0 }
+}
+
+struct BatteryInfo {
+    let percent: Int
+    let isCharging: Bool
+    let onACPower: Bool
+    /// Estimated minutes until empty (only meaningful when discharging).
+    let timeToEmpty: Int?
+    /// Estimated minutes until fully charged (only meaningful when charging).
+    let timeToFull: Int?
+    let cycleCount: Int?
+    /// Current maximum capacity as a percentage of design capacity.
+    let healthPercent: Int?
 }
 
 enum SystemStats {
@@ -94,7 +108,7 @@ enum SystemStats {
         return "\(minutes)m"
     }
 
-    static func battery() -> (percent: Int, charging: Bool)? {
+    static func battery() -> BatteryInfo? {
         guard let blob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
               let sources = IOPSCopyPowerSourcesList(blob)?.takeRetainedValue() as? [Any] else { return nil }
         for source in sources {
@@ -102,10 +116,43 @@ enum SystemStats {
                 .takeUnretainedValue() as? [String: Any],
                   let current = desc[kIOPSCurrentCapacityKey] as? Int,
                   let max = desc[kIOPSMaxCapacityKey] as? Int, max > 0 else { continue }
-            let charging = (desc[kIOPSIsChargingKey] as? Bool) ?? false
-            return (current * 100 / max, charging)
+            // Time estimates are in minutes; 0 or -1 means unknown / still calculating.
+            func minutes(_ key: String) -> Int? {
+                guard let value = desc[key] as? Int, value > 0 else { return nil }
+                return value
+            }
+            let details = smartBatteryDetails()
+            return BatteryInfo(
+                percent: current * 100 / max,
+                isCharging: (desc[kIOPSIsChargingKey] as? Bool) ?? false,
+                onACPower: (desc[kIOPSPowerSourceStateKey] as? String) == kIOPSACPowerValue,
+                timeToEmpty: minutes(kIOPSTimeToEmptyKey),
+                timeToFull: minutes(kIOPSTimeToFullChargeKey),
+                cycleCount: details.cycleCount,
+                healthPercent: details.healthPercent
+            )
         }
         return nil
+    }
+
+    /// Cycle count and health from the battery's IORegistry entry. MaxCapacity is
+    /// normalized to 100 on Apple Silicon, so prefer the raw capacity readings.
+    private static func smartBatteryDetails() -> (cycleCount: Int?, healthPercent: Int?) {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
+        guard service != 0 else { return (nil, nil) }
+        defer { IOObjectRelease(service) }
+        func intProp(_ key: String) -> Int? {
+            IORegistryEntryCreateCFProperty(service, key as CFString, kCFAllocatorDefault, 0)?
+                .takeRetainedValue() as? Int
+        }
+        let cycles = intProp("CycleCount")
+        var health: Int?
+        if let design = intProp("DesignCapacity"), design > 0,
+           let maxCapacity = intProp("AppleRawMaxCapacity") ?? intProp("NominalChargeCapacity") {
+            // A fresh battery's raw capacity can exceed its design capacity; cap at 100.
+            health = min(100, Int((Double(maxCapacity) / Double(design) * 100).rounded()))
+        }
+        return (cycles, health)
     }
 
     // MARK: Formatting
@@ -115,6 +162,11 @@ enum SystemStats {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
+    }
+
+    /// "45m" or "1h 5m".
+    static func formatMinutes(_ minutes: Int) -> String {
+        minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
     }
 
     /// Compact form for the menu bar title, e.g. "246 GB" or "85.3 GB".

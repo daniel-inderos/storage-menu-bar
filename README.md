@@ -17,7 +17,10 @@ just a Swift package you can build and run in seconds.
   truly-free vs. purgeable breakdown in the dropdown
 - **Memory usage** counted the way Activity Monitor does (active + wired + compressed)
 - **CPU usage** and 1-minute load average
-- **Uptime** and **battery** level / charging state (battery row auto-hides on desktops)
+- **Uptime**
+- **Battery section** — charge level, time remaining (or time until full when
+  charging), power source, battery health, and cycle count; hides itself
+  entirely on desktops
 - **Open Storage Settings…** jumps straight to macOS's storage management pane
   when it's time to free up space
 - **Launch at Login** toggle built in (via `SMAppService`)

@@ -10,10 +10,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let availableItem = NSMenuItem()
     private let freeItem = NSMenuItem()
     private let usedItem = NSMenuItem()
+    private let systemHeaderItem = NSMenuItem()
     private let memoryItem = NSMenuItem()
     private let cpuItem = NSMenuItem()
     private let uptimeItem = NSMenuItem()
-    private let batteryItem = NSMenuItem()
+    private let batterySeparator = NSMenuItem.separator()
+    private let batteryHeaderItem = NSMenuItem()
+    private let chargeItem = NSMenuItem()
+    private let powerItem = NSMenuItem()
+    private let healthItem = NSMenuItem()
     private let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -87,21 +92,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    // MARK: Menu text styling
+    //
+    // Info rows are enabled but have no action, so they read at full contrast
+    // (AppKit dims disabled items, even with attributed titles) while clicking
+    // them does nothing. A tab stop aligns the values into a column.
+
+    private static let valueColumn: CGFloat = 88
+
+    private func headerTitle(_ text: String) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [
+            .font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize),
+            .foregroundColor: NSColor.labelColor,
+        ])
+    }
+
+    private func infoTitle(_ label: String, _ value: String) -> NSAttributedString {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.tabStops = [NSTextTab(textAlignment: .left, location: Self.valueColumn)]
+        paragraph.headIndent = Self.valueColumn
+        let title = NSMutableAttributedString(string: label + "\t", attributes: [
+            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .paragraphStyle: paragraph,
+        ])
+        title.append(NSAttributedString(string: value, attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .medium),
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: paragraph,
+        ]))
+        return title
+    }
+
     private func buildMenu() {
         menu.autoenablesItems = false
 
-        volumeItem.attributedTitle = NSAttributedString(
-            string: "Storage",
-            attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)]
-        )
+        volumeItem.attributedTitle = headerTitle("Storage")
         for item in [volumeItem, availableItem, freeItem, usedItem] {
-            item.isEnabled = false
+            item.isEnabled = true
             menu.addItem(item)
         }
 
         menu.addItem(.separator())
-        for item in [memoryItem, cpuItem, uptimeItem, batteryItem] {
-            item.isEnabled = false
+        systemHeaderItem.attributedTitle = headerTitle("System")
+        for item in [systemHeaderItem, memoryItem, cpuItem, uptimeItem] {
+            item.isEnabled = true
+            menu.addItem(item)
+        }
+
+        menu.addItem(batterySeparator)
+        batteryHeaderItem.attributedTitle = headerTitle("Battery")
+        for item in [batteryHeaderItem, chargeItem, powerItem, healthItem] {
+            item.isEnabled = true
             menu.addItem(item)
         }
 
@@ -128,38 +170,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let disk = SystemStats.disk() {
             statusItem.button?.title = " " + SystemStats.formatBytesShort(disk.available)
 
-            volumeItem.attributedTitle = NSAttributedString(
-                string: disk.volumeName,
-                attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)]
-            )
-            availableItem.title = "Available: \(SystemStats.formatBytes(disk.available)) of \(SystemStats.formatBytes(disk.total))"
+            volumeItem.attributedTitle = headerTitle(disk.volumeName)
+            availableItem.attributedTitle = infoTitle("Available", "\(SystemStats.formatBytes(disk.available)) of \(SystemStats.formatBytes(disk.total))")
             if disk.purgeable > 1_000_000_000 {
-                freeItem.title = "Free now: \(SystemStats.formatBytes(disk.free)) (+\(SystemStats.formatBytes(disk.purgeable)) purgeable)"
+                freeItem.attributedTitle = infoTitle("Free now", "\(SystemStats.formatBytes(disk.free)) (+\(SystemStats.formatBytes(disk.purgeable)) purgeable)")
                 freeItem.isHidden = false
             } else {
                 freeItem.isHidden = true
             }
-            usedItem.title = String(format: "Used: %@ — %.0f%%", SystemStats.formatBytes(disk.used), disk.usedFraction * 100)
+            usedItem.attributedTitle = infoTitle("Used", String(format: "%@ · %.0f%%", SystemStats.formatBytes(disk.used), disk.usedFraction * 100))
         } else {
             statusItem.button?.title = " –"
         }
 
         if let mem = SystemStats.memory() {
-            memoryItem.title = "Memory: \(SystemStats.formatBytes(Int64(mem.used))) of \(SystemStats.formatBytes(Int64(mem.total))) used"
+            memoryItem.attributedTitle = infoTitle("Memory", "\(SystemStats.formatBytes(Int64(mem.used))) of \(SystemStats.formatBytes(Int64(mem.total))) used")
         }
 
         var cpuParts: [String] = []
         if let cpu = SystemStats.cpuUsage() { cpuParts.append(String(format: "%.0f%%", cpu)) }
         if let load = SystemStats.loadAverage() { cpuParts.append(String(format: "load %.2f", load)) }
-        cpuItem.title = "CPU: " + (cpuParts.isEmpty ? "–" : cpuParts.joined(separator: "  ·  "))
+        cpuItem.attributedTitle = infoTitle("CPU", cpuParts.isEmpty ? "–" : cpuParts.joined(separator: " · "))
 
-        uptimeItem.title = "Uptime: \(SystemStats.uptime())"
+        uptimeItem.attributedTitle = infoTitle("Uptime", SystemStats.uptime())
 
         if let battery = SystemStats.battery() {
-            batteryItem.title = "Battery: \(battery.percent)%\(battery.charging ? " — charging" : "")"
-            batteryItem.isHidden = false
+            var charge = "\(battery.percent)%"
+            if battery.isCharging {
+                charge += " — charging"
+                if let toFull = battery.timeToFull { charge += " · \(SystemStats.formatMinutes(toFull)) to full" }
+            } else if battery.onACPower {
+                charge += battery.percent == 100 ? " — charged" : " — on hold"
+            } else if let toEmpty = battery.timeToEmpty {
+                charge += " · \(SystemStats.formatMinutes(toEmpty)) left"
+            }
+            chargeItem.attributedTitle = infoTitle("Charge", charge)
+            powerItem.attributedTitle = infoTitle("Power", battery.onACPower ? "AC Power" : "Battery")
+
+            var healthParts: [String] = []
+            if let health = battery.healthPercent { healthParts.append("\(health)% capacity") }
+            if let cycles = battery.cycleCount { healthParts.append("\(cycles) cycles") }
+            healthItem.attributedTitle = infoTitle("Health", healthParts.joined(separator: " · "))
+            healthItem.isHidden = healthParts.isEmpty
+
+            for item in [batterySeparator, batteryHeaderItem, chargeItem, powerItem] {
+                item.isHidden = false
+            }
         } else {
-            batteryItem.isHidden = true
+            for item in [batterySeparator, batteryHeaderItem, chargeItem, powerItem, healthItem] {
+                item.isHidden = true
+            }
         }
 
         loginItem.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
