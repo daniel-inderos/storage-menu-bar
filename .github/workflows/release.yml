@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build StorageBar.app
+        run: ./build-app.sh
+
+      - name: Zip app bundle
+        run: ditto -c -k --keepParent StorageBar.app StorageBar.zip
+
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" StorageBar.zip \
+            --title "StorageBar ${GITHUB_REF_NAME}" \
+            --generate-notes

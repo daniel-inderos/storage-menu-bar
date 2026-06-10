@@ -15,21 +15,43 @@ just a Swift package you can build and run in seconds.
 - **Storage in your menu bar** — available space on your startup volume,
   measured Finder-style (includes purgeable space macOS can reclaim), with the
   truly-free vs. purgeable breakdown in the dropdown
+- **Low-space warning** — the menu bar reading turns orange below a threshold
+  you choose (off / 10 / 25 / 50 / 100 GB), red below half of it, and sends a
+  one-time notification when you cross it
+- **Other volumes** — external drives and other mounted volumes appear in a
+  Volumes submenu with their free space; click one to open it in Finder
+- **Reclaim Space submenu** — sizes of the usual space hogs (Trash, Downloads,
+  Xcode DerivedData, Caches), each one click from Finder, plus a shortcut to
+  macOS's Storage Settings pane. Sizes are computed in the background and
+  cached for five minutes
 - **Memory usage** counted the way Activity Monitor does (active + wired + compressed)
-- **CPU usage** and 1-minute load average
-- **Uptime**
+- **CPU usage** and 1-minute load average, plus **uptime**
 - **Battery section** — charge level, time remaining (or time until full when
   charging), power source, battery health, and cycle count; hides itself
   entirely on desktops
-- **Open Storage Settings…** jumps straight to macOS's storage management pane
-  when it's time to free up space
-- **Launch at Login** toggle built in (via `SMAppService`)
-- Auto-refreshes every 30 seconds and every time you open the menu
-- No Dock icon, no windows — it's a menu bar app and nothing else
+- **Settings submenu** — what the menu bar shows (free space, used percentage,
+  or icon only), refresh interval, warning threshold, and Launch at Login.
+  Everything lives in the menu; there are no windows
+- No Dock icon — it's a menu bar app and nothing else
 
 ## Install
 
+### Download
+
+Grab `StorageBar.zip` from the
+[latest release](https://github.com/daniel-inderos/storage-menu-bar/releases/latest),
+unzip it, and move `StorageBar.app` to `/Applications`. The app is ad-hoc
+signed rather than notarized, so macOS will quarantine the download; clear it
+before first launch:
+
+```sh
+xattr -cr /Applications/StorageBar.app
+```
+
+### Build from source
+
 Requires macOS 13+ and a Swift toolchain (Xcode or Command Line Tools).
+Building locally avoids the quarantine step entirely.
 
 ```sh
 git clone https://github.com/daniel-inderos/storage-menu-bar.git
@@ -37,13 +59,6 @@ cd storage-menu-bar
 ./build-app.sh
 open StorageBar.app
 ```
-
-To keep it around, move `StorageBar.app` to `/Applications` and enable
-**Launch at Login** from its menu.
-
-> **Note:** the build script ad-hoc signs the app. Since it isn't notarized,
-> Gatekeeper may prompt the first time you launch a copy you didn't build
-> yourself — building from source avoids this entirely.
 
 ## Development
 

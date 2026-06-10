@@ -15,6 +15,13 @@ struct DiskInfo {
     var usedFraction: Double { total > 0 ? Double(used) / Double(total) : 0 }
 }
 
+struct VolumeInfo {
+    let url: URL
+    let name: String
+    let total: Int64
+    let available: Int64
+}
+
 struct BatteryInfo {
     let percent: Int
     let isCharging: Bool
@@ -49,6 +56,46 @@ enum SystemStats {
             available: available,
             free: free
         )
+    }
+
+    /// Mounted, user-visible volumes other than the startup disk.
+    static func otherVolumes() -> [VolumeInfo] {
+        let keys: Set<URLResourceKey> = [
+            .volumeNameKey, .volumeTotalCapacityKey,
+            .volumeAvailableCapacityKey, .volumeIsBrowsableKey,
+        ]
+        guard let urls = FileManager.default.mountedVolumeURLs(
+            includingResourceValuesForKeys: Array(keys), options: [.skipHiddenVolumes]
+        ) else { return [] }
+        var volumes: [VolumeInfo] = []
+        for url in urls where url.path != "/" {
+            guard let values = try? url.resourceValues(forKeys: keys),
+                  values.volumeIsBrowsable == true,
+                  let total = values.volumeTotalCapacity, total > 0 else { continue }
+            volumes.append(VolumeInfo(
+                url: url,
+                name: values.volumeName ?? url.lastPathComponent,
+                total: Int64(total),
+                available: Int64(values.volumeAvailableCapacity ?? 0)
+            ))
+        }
+        return volumes
+    }
+
+    /// Total allocated size of everything under `url`. Walks the tree, so run it
+    /// off the main thread; unreadable entries are skipped.
+    static func directorySize(_ url: URL) -> Int64 {
+        let keys: Set<URLResourceKey> = [.totalFileAllocatedSizeKey, .isRegularFileKey]
+        guard let enumerator = FileManager.default.enumerator(
+            at: url, includingPropertiesForKeys: Array(keys), options: [], errorHandler: { _, _ in true }
+        ) else { return 0 }
+        var total: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            guard let values = try? fileURL.resourceValues(forKeys: keys),
+                  values.isRegularFile == true else { continue }
+            total += Int64(values.totalFileAllocatedSize ?? 0)
+        }
+        return total
     }
 
     /// Used memory the way Activity Monitor counts it: active + wired + compressed.

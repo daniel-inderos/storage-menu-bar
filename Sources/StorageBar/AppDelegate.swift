@@ -1,25 +1,51 @@
 import AppKit
 import ServiceManagement
+import UserNotifications
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let menu = NSMenu()
     private var timer: Timer?
 
+    // Storage section
     private let volumeItem = NSMenuItem()
     private let availableItem = NSMenuItem()
     private let freeItem = NSMenuItem()
     private let usedItem = NSMenuItem()
+    private let volumesItem = NSMenuItem(title: "Volumes", action: nil, keyEquivalent: "")
+    private let volumesMenu = NSMenu()
+
+    // System section
     private let systemHeaderItem = NSMenuItem()
     private let memoryItem = NSMenuItem()
     private let cpuItem = NSMenuItem()
     private let uptimeItem = NSMenuItem()
+
+    // Battery section
     private let batterySeparator = NSMenuItem.separator()
     private let batteryHeaderItem = NSMenuItem()
     private let chargeItem = NSMenuItem()
     private let powerItem = NSMenuItem()
     private let healthItem = NSMenuItem()
+
+    // Reclaim Space submenu
+    private struct ReclaimTarget {
+        let label: String
+        let url: URL
+    }
+    private let reclaimMenu = NSMenu()
+    private var reclaimRows: [(target: ReclaimTarget, item: NSMenuItem)] = []
+    private var reclaimScannedAt: Date?
+    private var reclaimScanning = false
+
+    // Settings submenu
+    private let settingsMenu = NSMenu()
+    private var displayItems: [NSMenuItem] = []
+    private var intervalItems: [NSMenuItem] = []
+    private var warnItems: [NSMenuItem] = []
     private let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+
+    private var lowSpaceNotified = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -36,11 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Prime the CPU tick baseline so the first real refresh has a delta.
         _ = SystemStats.cpuUsage()
         refresh()
-
-        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            self?.refresh()
-        }
-        timer?.tolerance = 5
+        startTimer()
 
         // Hidden flag used by tooling: opens the menu, captures it to a PNG, and exits.
         // Capturing our own window doesn't require screen recording permission.
@@ -49,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let path = args[flagIndex + 1]
             // Menu tracking blocks the main run loop in event-tracking mode, so the
             // capture timer must run in .common modes to fire while the menu is open.
-            let captureTimer = Timer(timeInterval: 2.0, repeats: false) { [weak self] _ in
+            let captureTimer = Timer(timeInterval: 4.0, repeats: false) { [weak self] _ in
                 self?.captureMenuScreenshot(to: path)
             }
             RunLoop.main.add(captureTimer, forMode: .common)
@@ -57,6 +79,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.statusItem.button?.performClick(nil)
             }
         }
+    }
+
+    private func startTimer() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: Prefs.refreshInterval, repeats: true) { [weak self] _ in
+            self?.refresh()
+        }
+        timer?.tolerance = Prefs.refreshInterval / 6
     }
 
     private func captureMenuScreenshot(to path: String) {
@@ -124,51 +154,147 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return title
     }
 
+    // MARK: Menu construction
+
     private func buildMenu() {
         menu.autoenablesItems = false
 
         volumeItem.attributedTitle = headerTitle("Storage")
-        for item in [volumeItem, availableItem, freeItem, usedItem] {
-            item.isEnabled = true
+        volumesItem.submenu = volumesMenu
+        volumesItem.isHidden = true
+        volumesMenu.autoenablesItems = false
+        for item in [volumeItem, availableItem, freeItem, usedItem, volumesItem] {
             menu.addItem(item)
         }
 
         menu.addItem(.separator())
         systemHeaderItem.attributedTitle = headerTitle("System")
         for item in [systemHeaderItem, memoryItem, cpuItem, uptimeItem] {
-            item.isEnabled = true
             menu.addItem(item)
         }
 
         menu.addItem(batterySeparator)
         batteryHeaderItem.attributedTitle = headerTitle("Battery")
         for item in [batteryHeaderItem, chargeItem, powerItem, healthItem] {
-            item.isEnabled = true
             menu.addItem(item)
         }
 
         menu.addItem(.separator())
-        let storageSettings = NSMenuItem(title: "Open Storage Settings…", action: #selector(openStorageSettings), keyEquivalent: "")
-        storageSettings.target = self
-        menu.addItem(storageSettings)
+        buildReclaimMenu()
+        let reclaimItem = NSMenuItem(title: "Reclaim Space", action: nil, keyEquivalent: "")
+        reclaimItem.submenu = reclaimMenu
+        menu.addItem(reclaimItem)
 
+        buildSettingsMenu()
+        let settingsItem = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
+        settingsItem.submenu = settingsMenu
+        menu.addItem(settingsItem)
+
+        menu.addItem(.separator())
         let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refreshClicked), keyEquivalent: "r")
         refreshItem.target = self
         menu.addItem(refreshItem)
 
-        loginItem.target = self
-        menu.addItem(loginItem)
-
-        menu.addItem(.separator())
         let quitItem = NSMenuItem(title: "Quit StorageBar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quitItem)
+    }
+
+    private func buildReclaimMenu() {
+        reclaimMenu.autoenablesItems = false
+
+        let storageSettings = NSMenuItem(title: "Open Storage Settings…", action: #selector(openStorageSettings), keyEquivalent: "")
+        storageSettings.target = self
+        reclaimMenu.addItem(storageSettings)
+        reclaimMenu.addItem(.separator())
+
+        let fm = FileManager.default
+        var targets: [ReclaimTarget] = []
+        if let trash = fm.urls(for: .trashDirectory, in: .userDomainMask).first {
+            targets.append(ReclaimTarget(label: "Trash", url: trash))
+        }
+        if let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first {
+            targets.append(ReclaimTarget(label: "Downloads", url: downloads))
+        }
+        let derivedData = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Developer/Xcode/DerivedData")
+        if fm.fileExists(atPath: derivedData.path) {
+            targets.append(ReclaimTarget(label: "DerivedData", url: derivedData))
+        }
+        if let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            targets.append(ReclaimTarget(label: "Caches", url: caches))
+        }
+
+        for target in targets {
+            let item = NSMenuItem(title: target.label, action: #selector(revealTarget(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = target.url
+            item.attributedTitle = infoTitle(target.label, "…")
+            item.toolTip = "Show in Finder"
+            reclaimMenu.addItem(item)
+            reclaimRows.append((target, item))
+        }
+    }
+
+    private func buildSettingsMenu() {
+        settingsMenu.autoenablesItems = false
+
+        func addHeader(_ text: String) {
+            let item = NSMenuItem()
+            item.attributedTitle = headerTitle(text)
+            settingsMenu.addItem(item)
+        }
+        func addChoice(_ title: String, _ action: Selector, _ value: Any) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            item.representedObject = value
+            item.indentationLevel = 1
+            settingsMenu.addItem(item)
+            return item
+        }
+
+        addHeader("Menu Bar Shows")
+        for display in MenuBarDisplay.allCases {
+            displayItems.append(addChoice(display.label, #selector(selectDisplay(_:)), display.rawValue))
+        }
+
+        settingsMenu.addItem(.separator())
+        addHeader("Refresh Every")
+        for (label, seconds) in [("10 seconds", 10.0), ("30 seconds", 30.0), ("1 minute", 60.0), ("5 minutes", 300.0)] {
+            intervalItems.append(addChoice(label, #selector(selectInterval(_:)), seconds))
+        }
+
+        settingsMenu.addItem(.separator())
+        addHeader("Warn Below")
+        for (label, gb) in [("Off", 0), ("10 GB", 10), ("25 GB", 25), ("50 GB", 50), ("100 GB", 100)] {
+            warnItems.append(addChoice(label, #selector(selectWarnThreshold(_:)), gb))
+        }
+
+        settingsMenu.addItem(.separator())
+        loginItem.target = self
+        settingsMenu.addItem(loginItem)
+
+        updateSettingsChecks()
+    }
+
+    private func updateSettingsChecks() {
+        for item in displayItems {
+            item.state = (item.representedObject as? String == Prefs.display.rawValue) ? .on : .off
+        }
+        for item in intervalItems {
+            item.state = (item.representedObject as? TimeInterval == Prefs.refreshInterval) ? .on : .off
+        }
+        for item in warnItems {
+            item.state = (item.representedObject as? Int == Prefs.warnBelowGB) ? .on : .off
+        }
+        loginItem.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
     }
 
     // MARK: Refresh
 
     private func refresh() {
         if let disk = SystemStats.disk() {
-            statusItem.button?.title = " " + SystemStats.formatBytesShort(disk.available)
+            updateStatusButton(with: disk)
+            checkLowSpace(disk)
 
             volumeItem.attributedTitle = headerTitle(disk.volumeName)
             availableItem.attributedTitle = infoTitle("Available", "\(SystemStats.formatBytes(disk.available)) of \(SystemStats.formatBytes(disk.total))")
@@ -183,6 +309,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             statusItem.button?.title = " –"
         }
 
+        refreshVolumes()
+
         if let mem = SystemStats.memory() {
             memoryItem.attributedTitle = infoTitle("Memory", "\(SystemStats.formatBytes(Int64(mem.used))) of \(SystemStats.formatBytes(Int64(mem.total))) used")
         }
@@ -194,51 +322,173 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         uptimeItem.attributedTitle = infoTitle("Uptime", SystemStats.uptime())
 
-        if let battery = SystemStats.battery() {
-            var charge = "\(battery.percent)%"
-            if battery.isCharging {
-                charge += " — charging"
-                if let toFull = battery.timeToFull { charge += " · \(SystemStats.formatMinutes(toFull)) to full" }
-            } else if battery.onACPower {
-                charge += battery.percent == 100 ? " — charged" : " — on hold"
-            } else if let toEmpty = battery.timeToEmpty {
-                charge += " · \(SystemStats.formatMinutes(toEmpty)) left"
-            }
-            chargeItem.attributedTitle = infoTitle("Charge", charge)
-            powerItem.attributedTitle = infoTitle("Power", battery.onACPower ? "AC Power" : "Battery")
+        refreshBattery()
+        updateSettingsChecks()
+    }
 
-            var healthParts: [String] = []
-            if let health = battery.healthPercent { healthParts.append("\(health)% capacity") }
-            if let cycles = battery.cycleCount { healthParts.append("\(cycles) cycles") }
-            healthItem.attributedTitle = infoTitle("Health", healthParts.joined(separator: " · "))
-            healthItem.isHidden = healthParts.isEmpty
+    private func updateStatusButton(with disk: DiskInfo) {
+        guard let button = statusItem.button else { return }
+        switch Prefs.display {
+        case .freeSpace:
+            button.title = " " + SystemStats.formatBytesShort(disk.available)
+        case .usedPercent:
+            button.title = String(format: " %.0f%%", disk.usedFraction * 100)
+        case .iconOnly:
+            button.title = ""
+        }
 
-            for item in [batterySeparator, batteryHeaderItem, chargeItem, powerItem] {
-                item.isHidden = false
-            }
+        let availableGB = Double(disk.available) / 1_000_000_000
+        let warnGB = Double(Prefs.warnBelowGB)
+        if warnGB > 0 && availableGB < warnGB / 2 {
+            button.contentTintColor = .systemRed
+        } else if warnGB > 0 && availableGB < warnGB {
+            button.contentTintColor = .systemOrange
         } else {
+            button.contentTintColor = nil
+        }
+    }
+
+    private func checkLowSpace(_ disk: DiskInfo) {
+        let warnGB = Double(Prefs.warnBelowGB)
+        guard warnGB > 0 else {
+            lowSpaceNotified = false
+            return
+        }
+        let availableGB = Double(disk.available) / 1_000_000_000
+        if availableGB < warnGB {
+            if !lowSpaceNotified {
+                lowSpaceNotified = true
+                postLowSpaceNotification(disk)
+            }
+        } else if availableGB > warnGB * 1.1 {
+            // Hysteresis: re-arm only once comfortably back above the threshold.
+            lowSpaceNotified = false
+        }
+    }
+
+    private func postLowSpaceNotification(_ disk: DiskInfo) {
+        // UNUserNotificationCenter requires an app bundle (not a bare `swift run` binary).
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Low Disk Space"
+            content.body = "\(disk.volumeName) has \(SystemStats.formatBytes(disk.available)) available."
+            center.add(UNNotificationRequest(identifier: "low-disk-space", content: content, trigger: nil))
+        }
+    }
+
+    private func refreshVolumes() {
+        let volumes = SystemStats.otherVolumes()
+        volumesItem.isHidden = volumes.isEmpty
+        volumesMenu.removeAllItems()
+        for volume in volumes {
+            let item = NSMenuItem(title: volume.name, action: #selector(revealTarget(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = volume.url
+            item.attributedTitle = infoTitle(volume.name, "\(SystemStats.formatBytesShort(volume.available)) free of \(SystemStats.formatBytesShort(volume.total))")
+            item.toolTip = "Show in Finder"
+            volumesMenu.addItem(item)
+        }
+    }
+
+    private func refreshBattery() {
+        guard let battery = SystemStats.battery() else {
             for item in [batterySeparator, batteryHeaderItem, chargeItem, powerItem, healthItem] {
                 item.isHidden = true
             }
+            return
         }
 
-        loginItem.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
+        var charge = "\(battery.percent)%"
+        if battery.isCharging {
+            charge += " — charging"
+            if let toFull = battery.timeToFull { charge += " · \(SystemStats.formatMinutes(toFull)) to full" }
+        } else if battery.onACPower {
+            charge += battery.percent == 100 ? " — charged" : " — on hold"
+        } else if let toEmpty = battery.timeToEmpty {
+            charge += " · \(SystemStats.formatMinutes(toEmpty)) left"
+        }
+        chargeItem.attributedTitle = infoTitle("Charge", charge)
+        powerItem.attributedTitle = infoTitle("Power", battery.onACPower ? "AC Power" : "Battery")
+
+        var healthParts: [String] = []
+        if let health = battery.healthPercent { healthParts.append("\(health)% capacity") }
+        if let cycles = battery.cycleCount { healthParts.append("\(cycles) cycles") }
+        healthItem.attributedTitle = infoTitle("Health", healthParts.joined(separator: " · "))
+        healthItem.isHidden = healthParts.isEmpty
+
+        for item in [batterySeparator, batteryHeaderItem, chargeItem, powerItem] {
+            item.isHidden = false
+        }
+    }
+
+    // MARK: Reclaim Space scanning
+
+    private func scanReclaimTargetsIfStale() {
+        guard !reclaimScanning else { return }
+        if let scannedAt = reclaimScannedAt, Date().timeIntervalSince(scannedAt) < 300 { return }
+        reclaimScanning = true
+        let rows = reclaimRows
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            for (target, item) in rows {
+                let size = SystemStats.directorySize(target.url)
+                DispatchQueue.main.async {
+                    item.attributedTitle = self?.infoTitle(target.label, SystemStats.formatBytes(size))
+                }
+            }
+            DispatchQueue.main.async {
+                self?.reclaimScanning = false
+                self?.reclaimScannedAt = Date()
+            }
+        }
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        guard menu === self.menu else { return }
         refresh()
+        scanReclaimTargetsIfStale()
     }
 
     // MARK: Actions
 
     @objc private func refreshClicked() {
+        reclaimScannedAt = nil
         refresh()
+        scanReclaimTargetsIfStale()
+    }
+
+    @objc private func revealTarget(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        NSWorkspace.shared.open(url)
     }
 
     @objc private func openStorageSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.settings.Storage") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    @objc private func selectDisplay(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let display = MenuBarDisplay(rawValue: raw) else { return }
+        Prefs.display = display
+        refresh()
+    }
+
+    @objc private func selectInterval(_ sender: NSMenuItem) {
+        guard let seconds = sender.representedObject as? TimeInterval else { return }
+        Prefs.refreshInterval = seconds
+        startTimer()
+        updateSettingsChecks()
+    }
+
+    @objc private func selectWarnThreshold(_ sender: NSMenuItem) {
+        guard let gb = sender.representedObject as? Int else { return }
+        Prefs.warnBelowGB = gb
+        lowSpaceNotified = false
+        refresh()
     }
 
     @objc private func toggleLaunchAtLogin() {
@@ -254,6 +504,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             alert.informativeText = "\(error.localizedDescription)\n\nNote: this only works when running from StorageBar.app (use build-app.sh), not from a bare `swift run` binary."
             alert.runModal()
         }
-        loginItem.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
+        updateSettingsChecks()
     }
 }
