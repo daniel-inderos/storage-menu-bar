@@ -36,6 +36,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.refresh()
         }
         timer?.tolerance = 5
+
+        // Hidden flag used by tooling: opens the menu, captures it to a PNG, and exits.
+        // Capturing our own window doesn't require screen recording permission.
+        let args = ProcessInfo.processInfo.arguments
+        if let flagIndex = args.firstIndex(of: "--screenshot-menu"), flagIndex + 1 < args.count {
+            let path = args[flagIndex + 1]
+            // Menu tracking blocks the main run loop in event-tracking mode, so the
+            // capture timer must run in .common modes to fire while the menu is open.
+            let captureTimer = Timer(timeInterval: 2.0, repeats: false) { [weak self] _ in
+                self?.captureMenuScreenshot(to: path)
+            }
+            RunLoop.main.add(captureTimer, forMode: .common)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.statusItem.button?.performClick(nil)
+            }
+        }
+    }
+
+    private func captureMenuScreenshot(to path: String) {
+        guard let menuWindow = NSApp.windows
+            .filter({ $0 !== statusItem.button?.window && $0.frame.height > 50 })
+            .max(by: { $0.frame.height < $1.frame.height })
+        else { exit(2) }
+
+        var image: NSImage?
+        if let cgImage = CGWindowListCreateImage(
+            .null, .optionIncludingWindow, CGWindowID(menuWindow.windowNumber),
+            [.boundsIgnoreFraming, .bestResolution]
+        ) {
+            image = NSImage(cgImage: cgImage, size: .zero)
+        } else if let view = menuWindow.contentView,
+                  let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+            view.cacheDisplay(in: view.bounds, to: rep)
+            let rendered = NSImage(size: view.bounds.size)
+            rendered.addRepresentation(rep)
+            image = rendered
+        }
+
+        guard let image,
+              let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:])
+        else { exit(3) }
+        do {
+            try png.write(to: URL(fileURLWithPath: path))
+            exit(0)
+        } catch {
+            exit(4)
+        }
     }
 
     private func buildMenu() {
