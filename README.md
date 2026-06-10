@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/icon.png" width="128" alt="StorageBar icon">
+</p>
+
 # StorageBar
 
 A tiny, dependency-free macOS menu bar app that shows your remaining disk
