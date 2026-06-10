@@ -43,6 +43,17 @@ just a Swift package you can build and run in seconds.
 
 ## Install
 
+### Homebrew
+
+```sh
+brew install --cask daniel-inderos/tap/storagebar --no-quarantine
+```
+
+(`--no-quarantine` because the app is ad-hoc signed, not notarized — without
+it Gatekeeper blocks the first launch. The
+[tap](https://github.com/daniel-inderos/homebrew-tap) is updated automatically
+by the release workflow, so `brew upgrade` picks up new versions.)
+
 ### Download
 
 Grab `StorageBar.zip` from the
