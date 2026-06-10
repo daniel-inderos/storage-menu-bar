@@ -435,7 +435,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             for (target, item) in rows {
                 let size = SystemStats.directorySize(target.url)
                 DispatchQueue.main.async {
-                    item.attributedTitle = self?.infoTitle(target.label, SystemStats.formatBytes(size))
+                    if let size {
+                        item.attributedTitle = self?.infoTitle(target.label, SystemStats.formatBytes(size))
+                        item.toolTip = "Show in Finder"
+                    } else {
+                        item.attributedTitle = self?.infoTitle(target.label, "no access")
+                        item.toolTip = "StorageBar can't read this folder. To see its size, grant StorageBar "
+                            + "Full Disk Access in System Settings → Privacy & Security. Click to open it in Finder."
+                    }
                 }
             }
             DispatchQueue.main.async {

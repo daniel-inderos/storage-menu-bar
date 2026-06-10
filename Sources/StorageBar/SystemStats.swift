@@ -83,12 +83,19 @@ enum SystemStats {
     }
 
     /// Total allocated size of everything under `url`. Walks the tree, so run it
-    /// off the main thread; unreadable entries are skipped.
-    static func directorySize(_ url: URL) -> Int64 {
+    /// off the main thread. Returns nil when the directory itself can't be read
+    /// (e.g. ~/.Trash without Full Disk Access) — that's "unknown", not zero.
+    /// Unreadable entries deeper in the tree are skipped.
+    static func directorySize(_ url: URL) -> Int64? {
+        do {
+            _ = try FileManager.default.contentsOfDirectory(atPath: url.path)
+        } catch {
+            return nil
+        }
         let keys: Set<URLResourceKey> = [.totalFileAllocatedSizeKey, .isRegularFileKey]
         guard let enumerator = FileManager.default.enumerator(
             at: url, includingPropertiesForKeys: Array(keys), options: [], errorHandler: { _, _ in true }
-        ) else { return 0 }
+        ) else { return nil }
         var total: Int64 = 0
         for case let fileURL as URL in enumerator {
             guard let values = try? fileURL.resourceValues(forKeys: keys),
@@ -98,7 +105,8 @@ enum SystemStats {
         return total
     }
 
-    /// Used memory the way Activity Monitor counts it: active + wired + compressed.
+    /// Used memory with Activity Monitor's formula:
+    /// app memory (internal - purgeable) + wired + compressed.
     static func memory() -> (used: UInt64, total: UInt64)? {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.stride / MemoryLayout<integer_t>.stride)
@@ -110,7 +118,8 @@ enum SystemStats {
         guard result == KERN_SUCCESS else { return nil }
         var pageSize: vm_size_t = 0
         host_page_size(mach_host_self(), &pageSize)
-        let pages = UInt64(stats.active_count) + UInt64(stats.wire_count) + UInt64(stats.compressor_page_count)
+        let appPages = UInt64(stats.internal_page_count) - min(UInt64(stats.internal_page_count), UInt64(stats.purgeable_count))
+        let pages = appPages + UInt64(stats.wire_count) + UInt64(stats.compressor_page_count)
         return (pages * UInt64(pageSize), ProcessInfo.processInfo.physicalMemory)
     }
 
@@ -146,7 +155,17 @@ enum SystemStats {
     }
 
     static func uptime() -> String {
-        let seconds = Int(ProcessInfo.processInfo.systemUptime)
+        // ProcessInfo.systemUptime excludes time asleep; kern.boottime gives
+        // wall-clock time since boot, matching the `uptime` command.
+        var boottime = timeval()
+        var size = MemoryLayout<timeval>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_BOOTTIME]
+        let seconds: Int
+        if sysctl(&mib, 2, &boottime, &size, nil, 0) == 0, boottime.tv_sec > 0 {
+            seconds = Int(Date().timeIntervalSince1970) - Int(boottime.tv_sec)
+        } else {
+            seconds = Int(ProcessInfo.processInfo.systemUptime)
+        }
         let days = seconds / 86400
         let hours = (seconds % 86400) / 3600
         let minutes = (seconds % 3600) / 60
@@ -194,8 +213,10 @@ enum SystemStats {
         }
         let cycles = intProp("CycleCount")
         var health: Int?
+        // System Settings derives "Maximum Capacity" from NominalChargeCapacity,
+        // so prefer it to match what the user sees there.
         if let design = intProp("DesignCapacity"), design > 0,
-           let maxCapacity = intProp("AppleRawMaxCapacity") ?? intProp("NominalChargeCapacity") {
+           let maxCapacity = intProp("NominalChargeCapacity") ?? intProp("AppleRawMaxCapacity") {
             // A fresh battery's raw capacity can exceed its design capacity; cap at 100.
             health = min(100, Int((Double(maxCapacity) / Double(design) * 100).rounded()))
         }
