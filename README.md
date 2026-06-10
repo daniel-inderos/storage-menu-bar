@@ -46,11 +46,11 @@ just a Swift package you can build and run in seconds.
 ### Homebrew
 
 ```sh
-brew install --cask daniel-inderos/tap/storagebar --no-quarantine
+HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask daniel-inderos/tap/storagebar
 ```
 
-(`--no-quarantine` because the app is ad-hoc signed, not notarized — without
-it Gatekeeper blocks the first launch. The
+(Quarantine is disabled because the app is ad-hoc signed, not notarized —
+otherwise Gatekeeper blocks the first launch. The
 [tap](https://github.com/daniel-inderos/homebrew-tap) is updated automatically
 by the release workflow, so `brew upgrade` picks up new versions.)
 
