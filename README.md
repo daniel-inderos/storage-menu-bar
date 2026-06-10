@@ -36,7 +36,8 @@ just a Swift package you can build and run in seconds.
   charging), power source, battery health, and cycle count; hides itself
   entirely on desktops
 - **Settings submenu** — what the menu bar shows (free space, used percentage,
-  or icon only), refresh interval, warning threshold, and Launch at Login.
+  or icon only), refresh interval, warning threshold, Launch at Login, and a
+  Check for Updates that compares against the latest GitHub release.
   Everything lives in the menu; there are no windows
 - No Dock icon — it's a menu bar app and nothing else
 
@@ -70,6 +71,7 @@ open StorageBar.app
 
 ```sh
 swift run            # quick iteration (Launch at Login needs the .app bundle)
+swift test           # unit tests (also run by CI on every push)
 ./build-app.sh       # release build + assemble StorageBar.app
 ```
 

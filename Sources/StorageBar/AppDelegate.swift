@@ -37,6 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var reclaimRows: [(target: ReclaimTarget, item: NSMenuItem)] = []
     private var reclaimScannedAt: Date?
     private var reclaimScanning = false
+    private let grantAccessSeparator = NSMenuItem.separator()
+    private let grantAccessItem = NSMenuItem(title: "Grant Full Disk Access…", action: #selector(openFullDiskAccess), keyEquivalent: "")
 
     // Settings submenu
     private let settingsMenu = NSMenu()
@@ -233,6 +235,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             reclaimMenu.addItem(item)
             reclaimRows.append((target, item))
         }
+
+        grantAccessItem.target = self
+        grantAccessItem.toolTip = "Opens System Settings → Privacy & Security → Full Disk Access. "
+            + "Add StorageBar there so it can size protected folders like the Trash."
+        for item in [grantAccessSeparator, grantAccessItem] {
+            item.isHidden = true
+            reclaimMenu.addItem(item)
+        }
     }
 
     private func buildSettingsMenu() {
@@ -272,6 +282,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsMenu.addItem(.separator())
         loginItem.target = self
         settingsMenu.addItem(loginItem)
+
+        let updatesItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        updatesItem.target = self
+        settingsMenu.addItem(updatesItem)
 
         updateSettingsChecks()
     }
@@ -432,20 +446,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         reclaimScanning = true
         let rows = reclaimRows
         DispatchQueue.global(qos: .utility).async { [weak self] in
+            var anyDenied = false
             for (target, item) in rows {
                 let size = SystemStats.directorySize(target.url)
+                if size == nil { anyDenied = true }
                 DispatchQueue.main.async {
                     if let size {
                         item.attributedTitle = self?.infoTitle(target.label, SystemStats.formatBytes(size))
                         item.toolTip = "Show in Finder"
                     } else {
                         item.attributedTitle = self?.infoTitle(target.label, "no access")
-                        item.toolTip = "StorageBar can't read this folder. To see its size, grant StorageBar "
-                            + "Full Disk Access in System Settings → Privacy & Security. Click to open it in Finder."
+                        item.toolTip = "StorageBar can't read this folder. Click to open it in Finder."
                     }
                 }
             }
+            let denied = anyDenied
             DispatchQueue.main.async {
+                self?.grantAccessSeparator.isHidden = !denied
+                self?.grantAccessItem.isHidden = !denied
                 self?.reclaimScanning = false
                 self?.reclaimScannedAt = Date()
             }
@@ -469,6 +487,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func revealTarget(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    @objc private func openFullDiskAccess() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    @objc private func checkForUpdates() {
+        UpdateChecker.fetchLatest { result in
+            DispatchQueue.main.async { [weak self] in
+                self?.showUpdateResult(result)
+            }
+        }
+    }
+
+    private func showUpdateResult(_ result: Result<(version: String, page: URL), Error>) {
+        let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        switch result {
+        case .failure:
+            alert.messageText = "Couldn’t Check for Updates"
+            alert.informativeText = "Check your internet connection and try again."
+        case .success(let latest) where UpdateChecker.isVersion(latest.version, newerThan: current):
+            alert.messageText = "Update Available"
+            alert.informativeText = "StorageBar \(latest.version) is available — you have \(current)."
+            alert.addButton(withTitle: "View Release")
+            alert.addButton(withTitle: "Later")
+            if alert.runModal() == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(latest.page)
+            }
+            return
+        case .success:
+            alert.messageText = "You’re Up to Date"
+            alert.informativeText = "StorageBar \(current) is the latest version."
+        }
+        alert.runModal()
     }
 
     @objc private func openStorageSettings() {
