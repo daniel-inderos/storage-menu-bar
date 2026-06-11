@@ -508,9 +508,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         switch result {
-        case .failure:
+        case .failure(let error):
             alert.messageText = "Couldn’t Check for Updates"
-            alert.informativeText = "Check your internet connection and try again."
+            alert.informativeText = "Error: \(error.localizedDescription)"
         case .success(let latest) where UpdateChecker.isVersion(latest.version, newerThan: current):
             alert.messageText = "Update Available"
             alert.informativeText = "StorageBar \(latest.version) is available — you have \(current)."
