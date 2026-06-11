@@ -43,33 +43,11 @@ just a Swift package you can build and run in seconds.
 
 ## Install
 
-### Homebrew
-
-```sh
-HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask daniel-inderos/tap/storagebar
-```
-
-(Quarantine is disabled because the app is ad-hoc signed, not notarized —
-otherwise Gatekeeper blocks the first launch. The
-[tap](https://github.com/daniel-inderos/homebrew-tap) is updated automatically
-by the release workflow, so `brew upgrade` picks up new versions.)
-
-### Download
-
-Grab `StorageBar.zip` from the
-[latest release](https://github.com/daniel-inderos/storage-menu-bar/releases/latest),
-unzip it, and move `StorageBar.app` to `/Applications`. The app is ad-hoc
-signed rather than notarized, so macOS will quarantine the download; clear it
-before first launch:
-
-```sh
-xattr -cr /Applications/StorageBar.app
-```
-
-### Build from source
+### Build from source (recommended)
 
 Requires macOS 13+ and a Swift toolchain (Xcode or Command Line Tools).
-Building locally avoids the quarantine step entirely.
+Building locally means you trust your own toolchain and the source you just
+checked out, and it avoids the Gatekeeper quarantine step entirely.
 
 ```sh
 git clone https://github.com/daniel-inderos/storage-menu-bar.git
@@ -77,6 +55,53 @@ cd storage-menu-bar
 ./build-app.sh
 open StorageBar.app
 ```
+
+### Homebrew
+
+The tap is convenient for upgrades, but today it installs the same prebuilt app
+as the release zip: ad-hoc signed, not Developer ID-signed, and not notarized.
+
+```sh
+HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask daniel-inderos/tap/storagebar
+```
+
+`--no-quarantine` tells Homebrew not to add macOS's quarantine attribute to the
+downloaded app. That bypasses Gatekeeper's first-launch block for an
+unnotarized app; it is not an extra trust check. Homebrew has deprecated this
+flag and plans to remove it around September 2026, along with disabling casks
+that fail Gatekeeper checks.
+
+The [tap](https://github.com/daniel-inderos/homebrew-tap) is updated
+automatically by the release workflow, so `brew upgrade` picks up new versions.
+Until releases are Developer ID-signed and notarized, this path is best suited
+to people comfortable vetting the source and choosing that Gatekeeper tradeoff.
+
+If you install without `--no-quarantine` and macOS blocks the first launch, you
+can approve it in System Settings → Privacy & Security → "Open Anyway", or
+clear quarantine yourself on any macOS version:
+
+```sh
+xattr -cr /Applications/StorageBar.app
+```
+
+### Download
+
+Grab `StorageBar.zip` from the
+[latest release](https://github.com/daniel-inderos/storage-menu-bar/releases/latest),
+unzip it, and move `StorageBar.app` to `/Applications`.
+
+The app is ad-hoc signed, not Developer ID-signed, and not notarized, so macOS
+will quarantine the download. On recent macOS versions, you can approve the
+blocked first launch in System Settings → Privacy & Security → "Open Anyway".
+Or clear the quarantine attribute yourself on any macOS version:
+
+```sh
+xattr -cr /Applications/StorageBar.app
+```
+
+Until releases are Developer ID-signed and notarized, direct downloads are best
+suited to people comfortable vetting the source before trusting the prebuilt
+app.
 
 ## Development
 
@@ -108,6 +133,31 @@ All stats come from native APIs — no shelling out, no polling daemons:
 The menu bar item is a plain AppKit `NSStatusItem`; `build-app.sh` wraps the
 SwiftPM release binary into a minimal `.app` bundle with `LSUIElement` set so
 it stays out of the Dock.
+
+## Privacy & Trust
+
+StorageBar has no telemetry, analytics, auto-update, or background daemon.
+Normal use makes no network requests. The only network access is Check for
+Updates, which makes one request to the GitHub releases API when you click it
+and offers to open the release page if a newer version exists.
+
+Core disk, memory, CPU, uptime, battery, and volume stats need no special
+permissions. The Reclaim Space submenu sizes folders in the background:
+sizing Trash needs Full Disk Access because macOS protects `~/.Trash`, and
+sizing Downloads may trigger macOS's standard Files & Folders prompt.
+Everything else works without those permissions.
+
+Launch at Login uses Apple's `ServiceManagement` API only when you turn on the
+menu item. The app is an `LSUIElement` menu bar app, so it has no Dock icon and
+does not install a helper daemon.
+
+Releases are ad-hoc signed by `build-app.sh` (`codesign --sign -`). Plain
+English: macOS sees a signed bundle with a stable local identity, but Apple has
+not verified the developer identity and has not notarized the build. That is
+why prebuilt downloads can be blocked by Gatekeeper until you explicitly
+approve them or remove quarantine. The app source is a handful of Swift files,
+so it is practical to audit in one sitting before deciding whether to run the
+prebuilt app.
 
 ## License
 
