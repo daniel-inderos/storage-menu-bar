@@ -19,28 +19,53 @@ let squircle = NSBezierPath(
     roundedRect: NSRect(x: inset, y: inset, width: canvas - 2 * inset, height: canvas - 2 * inset),
     xRadius: 185, yRadius: 185
 )
-NSGradient(colors: [
+let iconGradient = NSGradient(colors: [
     NSColor(calibratedRed: 0.25, green: 0.48, blue: 1.00, alpha: 1),
     NSColor(calibratedRed: 0.07, green: 0.18, blue: 0.55, alpha: 1),
-])!.draw(in: squircle, angle: -90)
+])!
+iconGradient.draw(in: squircle, angle: -90)
 
-let config = NSImage.SymbolConfiguration(pointSize: 430, weight: .medium)
-if let symbol = NSImage(systemSymbolName: "internaldrive.fill", accessibilityDescription: nil)?
-    .withSymbolConfiguration(config) {
-    let white = NSImage(size: symbol.size, flipped: false) { rect in
-        symbol.draw(in: rect)
-        NSColor.white.set()
-        rect.fill(using: .sourceAtop)
-        return true
-    }
-    let scale = (canvas * 0.56) / white.size.width
-    let drawSize = NSSize(width: white.size.width * scale, height: white.size.height * scale)
-    white.draw(in: NSRect(
-        x: (canvas - drawSize.width) / 2,
-        y: (canvas - drawSize.height) / 2,
-        width: drawSize.width, height: drawSize.height
-    ))
-}
+// Original drive glyph: a simple enclosure with blue cutouts for the
+// lower divider and activity LED.
+let driveWidth = canvas * 0.58
+let driveHeight = canvas * 0.32
+let driveRect = NSRect(
+    x: (canvas - driveWidth) / 2,
+    y: (canvas - driveHeight) / 2,
+    width: driveWidth,
+    height: driveHeight
+)
+let driveBody = NSBezierPath(roundedRect: driveRect, xRadius: 78, yRadius: 78)
+NSColor.white.setFill()
+driveBody.fill()
+
+let dividerHeight: CGFloat = 28
+let dividerInset = driveWidth * 0.12
+let dividerRect = NSRect(
+    x: driveRect.minX + dividerInset,
+    y: driveRect.minY + driveHeight * 0.28,
+    width: driveWidth - 2 * dividerInset,
+    height: dividerHeight
+)
+let divider = NSBezierPath(roundedRect: dividerRect, xRadius: dividerHeight / 2, yRadius: dividerHeight / 2)
+
+let ledDiameter: CGFloat = 48
+let ledRect = NSRect(
+    x: driveRect.minX + driveWidth * 0.18,
+    y: (driveRect.minY + dividerRect.minY - ledDiameter) / 2,
+    width: ledDiameter,
+    height: ledDiameter
+)
+let led = NSBezierPath(ovalIn: ledRect)
+
+let cutouts = NSBezierPath()
+cutouts.append(divider)
+cutouts.append(led)
+
+NSGraphicsContext.saveGraphicsState()
+cutouts.addClip()
+iconGradient.draw(in: squircle, angle: -90)
+NSGraphicsContext.restoreGraphicsState()
 
 NSGraphicsContext.restoreGraphicsState()
 try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: outPath))
