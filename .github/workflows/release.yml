@@ -14,11 +14,41 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Check tagged version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PLIST_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Info.plist)
+          if [[ "$PLIST_VERSION" != "$TAG_VERSION" ]]; then
+            echo "::error::Info.plist CFBundleShortVersionString is $PLIST_VERSION, but tag ${GITHUB_REF_NAME} requires $TAG_VERSION. Bump Info.plist before tagging."
+            exit 1
+          fi
+
       - name: Build StorageBar.app
-        run: ./build-app.sh
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            APP_VERSION="${GITHUB_REF_NAME}" ./build-app.sh
+          else
+            ./build-app.sh
+          fi
 
       - name: Zip app bundle
         run: ditto -c -k --keepParent StorageBar.app StorageBar.zip
+
+      - name: Verify release artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          ARCHS="$(lipo -archs StorageBar.app/Contents/MacOS/StorageBar)"
+          if [[ " $ARCHS " != *" x86_64 "* || " $ARCHS " != *" arm64 "* ]]; then
+            echo "::error::Expected StorageBar.app to be universal with x86_64 and arm64, got: $ARCHS"
+            exit 1
+          fi
+          BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" StorageBar.app/Contents/Info.plist)
+          if [[ "$BUNDLE_VERSION" != "$TAG_VERSION" ]]; then
+            echo "::error::StorageBar.app CFBundleShortVersionString is $BUNDLE_VERSION, but tag ${GITHUB_REF_NAME} requires $TAG_VERSION."
+            exit 1
+          fi
 
       - name: Create release
         if: startsWith(github.ref, 'refs/tags/')
@@ -27,10 +57,20 @@ jobs:
         # Uses the REST API directly instead of `gh release create`, which has
         # intermittently returned 401s where raw API calls succeed.
         run: |
-          RELEASE_ID=$(gh api -X POST "repos/${GITHUB_REPOSITORY}/releases" \
-            -f tag_name="${GITHUB_REF_NAME}" \
-            -f name="StorageBar ${GITHUB_REF_NAME}" \
-            -F generate_release_notes=true --jq .id)
+          TAG="${GITHUB_REF_NAME}"
+          if RELEASE_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq .id 2>/dev/null); then
+            echo "Reusing release ${RELEASE_ID}"
+          else
+            RELEASE_ID=$(gh api -X POST "repos/${GITHUB_REPOSITORY}/releases" \
+              -f tag_name="${TAG}" \
+              -f name="StorageBar ${TAG}" \
+              -F generate_release_notes=true --jq .id)
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets" \
+            --jq '.[] | select(.name == "StorageBar.zip") | .id' |
+            while read -r ASSET_ID; do
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${ASSET_ID}"
+            done
           curl -sf -X POST \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Content-Type: application/zip" \
