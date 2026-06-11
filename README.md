@@ -25,11 +25,12 @@ just a Swift package you can build and run in seconds.
 - **Other volumes** — external drives and other mounted volumes appear in a
   Volumes submenu with their free space; click one to open it in Finder
 - **Reclaim Space submenu** — sizes of the usual space hogs (Trash, Downloads,
-  Xcode DerivedData, Caches), each one click from Finder, plus a shortcut to
-  macOS's Storage Settings pane. Sizes are computed in the background and
-  cached for five minutes. macOS protects `~/.Trash`, so the Trash row shows
-  "no access" unless you grant StorageBar Full Disk Access in
-  System Settings → Privacy & Security (everything else works without it)
+  Xcode DerivedData, CoreSimulator, Homebrew Cache, and Caches), each one
+  click from Finder, plus a shortcut to macOS's Storage Settings pane. Sizes
+  are computed in the background and cached for five minutes. Trash sizing
+  needs Full Disk Access because macOS protects `~/.Trash`; if Downloads or
+  another folder is blocked, StorageBar points you to System Settings →
+  Privacy & Security → Files & Folders (Full Disk Access also works)
 - **Memory usage** counted the way Activity Monitor does (active + wired + compressed)
 - **CPU usage** and 1-minute load average, plus **uptime**
 - **Battery section** — charge level, time remaining (or time until full when

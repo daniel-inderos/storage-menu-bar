@@ -71,10 +71,18 @@ final class ReclaimScanner {
         if let downloads = fileManager.urls(for: .downloadsDirectory, in: .userDomainMask).first {
             targets.append(Target(label: "Downloads", url: downloads, accessHint: .filesAndFolders))
         }
-        let derivedData = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Developer/Xcode/DerivedData")
+        let home = fileManager.homeDirectoryForCurrentUser
+        let derivedData = home.appendingPathComponent("Library/Developer/Xcode/DerivedData")
         if fileManager.fileExists(atPath: derivedData.path) {
             targets.append(Target(label: "DerivedData", url: derivedData, accessHint: .filesAndFolders))
+        }
+        let coreSimulator = home.appendingPathComponent("Library/Developer/CoreSimulator")
+        if fileManager.fileExists(atPath: coreSimulator.path) {
+            targets.append(Target(label: "CoreSimulator", url: coreSimulator, accessHint: .filesAndFolders))
+        }
+        let homebrewCache = home.appendingPathComponent("Library/Caches/Homebrew")
+        if fileManager.fileExists(atPath: homebrewCache.path) {
+            targets.append(Target(label: "Homebrew Cache", url: homebrewCache, accessHint: .filesAndFolders))
         }
         if let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first {
             targets.append(Target(label: "Caches", url: caches, accessHint: .filesAndFolders))
