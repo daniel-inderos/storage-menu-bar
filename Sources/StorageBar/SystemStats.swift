@@ -36,7 +36,9 @@ struct BatteryInfo {
 }
 
 enum SystemStats {
-    private static var prevCPUTicks: (user: UInt64, system: UInt64, idle: UInt64, nice: UInt64)?
+    typealias CPUTicks = (user: UInt32, system: UInt32, idle: UInt32, nice: UInt32)
+
+    private static var prevCPUTicks: CPUTicks?
 
     static func disk() -> DiskInfo? {
         let url = URL(fileURLWithPath: "/")
@@ -134,16 +136,24 @@ enum SystemStats {
             }
         }
         guard result == KERN_SUCCESS else { return nil }
-        let ticks = (
-            user: UInt64(info.cpu_ticks.0),
-            system: UInt64(info.cpu_ticks.1),
-            idle: UInt64(info.cpu_ticks.2),
-            nice: UInt64(info.cpu_ticks.3)
+        let ticks: CPUTicks = (
+            user: info.cpu_ticks.0,
+            system: info.cpu_ticks.1,
+            idle: info.cpu_ticks.2,
+            nice: info.cpu_ticks.3
         )
         defer { prevCPUTicks = ticks }
         guard let prev = prevCPUTicks else { return nil }
-        let busy = (ticks.user - prev.user) + (ticks.system - prev.system) + (ticks.nice - prev.nice)
-        let total = busy + (ticks.idle - prev.idle)
+        return cpuUsage(from: prev, to: ticks)
+    }
+
+    static func cpuUsage(from prev: CPUTicks, to ticks: CPUTicks) -> Double? {
+        let user = UInt64(ticks.user &- prev.user)
+        let system = UInt64(ticks.system &- prev.system)
+        let idle = UInt64(ticks.idle &- prev.idle)
+        let nice = UInt64(ticks.nice &- prev.nice)
+        let busy = user + system + nice
+        let total = busy + idle
         guard total > 0 else { return nil }
         return Double(busy) / Double(total) * 100
     }
