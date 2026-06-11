@@ -16,3 +16,22 @@ jobs:
 
       - name: Test
         run: swift test
+
+      - name: Build App
+        run: ./build-app.sh
+
+      - name: Validate App
+        run: |
+          plutil -lint StorageBar.app/Contents/Info.plist
+          codesign --verify --deep --strict StorageBar.app
+          test -f StorageBar.app/Contents/MacOS/StorageBar
+          test -x StorageBar.app/Contents/MacOS/StorageBar
+          archs="$(lipo -archs StorageBar.app/Contents/MacOS/StorageBar)"
+          case " $archs " in
+            *" x86_64 "*) ;;
+            *) echo "Missing x86_64 slice in: $archs" >&2; exit 1 ;;
+          esac
+          case " $archs " in
+            *" arm64 "*) ;;
+            *) echo "Missing arm64 slice in: $archs" >&2; exit 1 ;;
+          esac
