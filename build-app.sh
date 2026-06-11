@@ -13,6 +13,13 @@ cp "$PRODUCT_DIR/StorageBar" "$APP/Contents/MacOS/StorageBar"
 cp "Info.plist" "$APP/Contents/Info.plist"
 cp "Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
+if [[ -n "${APP_VERSION:-}" ]]; then
+  VERSION="${APP_VERSION#v}"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
+  echo "Stamped version $VERSION"
+fi
+
 ARCHS="$(lipo -archs "$APP/Contents/MacOS/StorageBar")"
 if [[ " $ARCHS " != *" arm64 "* || " $ARCHS " != *" x86_64 "* ]]; then
   echo "Expected universal binary, got: $ARCHS" >&2
