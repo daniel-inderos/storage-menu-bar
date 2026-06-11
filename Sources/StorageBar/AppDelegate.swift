@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var reclaimRows: [(target: ReclaimScanner.Target, item: NSMenuItem)] = []
     private let grantAccessSeparator = NSMenuItem.separator()
     private let grantAccessItem = NSMenuItem(title: "Grant Full Disk Access…", action: #selector(openFullDiskAccess), keyEquivalent: "")
+    private let allowFolderAccessItem = NSMenuItem(title: "Allow Folder Access…", action: #selector(openFilesAndFoldersAccess), keyEquivalent: "")
 
     // Settings submenu
     private let settingsMenu = NSMenu()
@@ -218,7 +219,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         grantAccessItem.target = self
         grantAccessItem.toolTip = "Opens System Settings → Privacy & Security → Full Disk Access. "
             + "Add StorageBar there so it can size protected folders like the Trash."
-        for item in [grantAccessSeparator, grantAccessItem] {
+        allowFolderAccessItem.target = self
+        allowFolderAccessItem.toolTip = "Opens System Settings → Privacy & Security → Files & Folders. "
+            + "Allow StorageBar there so it can size protected folders like Downloads. Full Disk Access also works."
+        for item in [grantAccessSeparator, grantAccessItem, allowFolderAccessItem] {
             item.isHidden = true
             reclaimMenu.addItem(item)
         }
@@ -425,24 +429,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                   let item = reclaimRows.first(where: { $0.target.url == target.url })?.item else { return }
             switch result {
             case .size(let size):
+                item.isHidden = false
                 item.attributedTitle = infoTitle(target.label, SystemStats.formatBytes(size))
                 item.toolTip = "Show in Finder"
-            case .denied, .missing:
+            case .denied:
+                item.isHidden = false
                 item.attributedTitle = infoTitle(target.label, "no access")
-                item.toolTip = "StorageBar can't read this folder. Click to open it in Finder."
+                switch target.accessHint {
+                case .fullDiskAccess:
+                    item.toolTip = "Trash sizing needs Full Disk Access. Click to open it in Finder."
+                case .filesAndFolders:
+                    item.toolTip = "StorageBar can't read this folder. Allow access in System Settings "
+                        + "→ Privacy & Security → Files & Folders; Full Disk Access also works."
+                }
+            case .missing:
+                item.isHidden = true
             }
         } completion: { [weak self] results in
-            let denied = results.contains { scanResult in
-                switch scanResult.result {
-                case .size:
-                    return false
-                case .denied, .missing:
-                    return true
-                }
-            }
-            self?.grantAccessSeparator.isHidden = !denied
-            self?.grantAccessItem.isHidden = !denied
+            self?.updateAccessHintRows(from: results)
         }
+    }
+
+    private func updateAccessHintRows(from results: [ReclaimScanner.ScanResult]) {
+        var needsFullDiskAccess = false
+        var needsFolderAccess = false
+        for scanResult in results {
+            guard case .denied = scanResult.result else { continue }
+            switch scanResult.target.accessHint {
+            case .fullDiskAccess:
+                needsFullDiskAccess = true
+            case .filesAndFolders:
+                needsFolderAccess = true
+            }
+        }
+
+        grantAccessSeparator.isHidden = !(needsFullDiskAccess || needsFolderAccess)
+        grantAccessItem.isHidden = !needsFullDiskAccess
+        allowFolderAccessItem.isHidden = !needsFolderAccess
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -467,6 +490,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openFullDiskAccess() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    @objc private func openFilesAndFoldersAccess() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders") {
             NSWorkspace.shared.open(url)
         }
     }

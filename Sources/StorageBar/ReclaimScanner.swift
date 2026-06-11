@@ -2,8 +2,14 @@ import Foundation
 
 final class ReclaimScanner {
     struct Target {
+        enum AccessHint {
+            case fullDiskAccess
+            case filesAndFolders
+        }
+
         let label: String
         let url: URL
+        let accessHint: AccessHint
     }
 
     enum Result {
@@ -60,18 +66,18 @@ final class ReclaimScanner {
     private static func defaultTargets(fileManager: FileManager) -> [Target] {
         var targets: [Target] = []
         if let trash = fileManager.urls(for: .trashDirectory, in: .userDomainMask).first {
-            targets.append(Target(label: "Trash", url: trash))
+            targets.append(Target(label: "Trash", url: trash, accessHint: .fullDiskAccess))
         }
         if let downloads = fileManager.urls(for: .downloadsDirectory, in: .userDomainMask).first {
-            targets.append(Target(label: "Downloads", url: downloads))
+            targets.append(Target(label: "Downloads", url: downloads, accessHint: .filesAndFolders))
         }
         let derivedData = fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Developer/Xcode/DerivedData")
         if fileManager.fileExists(atPath: derivedData.path) {
-            targets.append(Target(label: "DerivedData", url: derivedData))
+            targets.append(Target(label: "DerivedData", url: derivedData, accessHint: .filesAndFolders))
         }
         if let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first {
-            targets.append(Target(label: "Caches", url: caches))
+            targets.append(Target(label: "Caches", url: caches, accessHint: .filesAndFolders))
         }
         return targets
     }
