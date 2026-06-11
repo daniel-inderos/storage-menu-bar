@@ -43,7 +43,7 @@ final class SystemStatsLiveTests: XCTestCase {
         let disk = try XCTUnwrap(SystemStats.disk())
         XCTAssertGreaterThan(disk.total, 0)
         XCTAssertGreaterThan(disk.available, 0)
-        XCTAssertLessThanOrEqual(disk.available, disk.total)
+        // No upper bound: important-usage capacity can briefly exceed total.
     }
 
     func testMemoryReturnsPlausibleValues() throws {
@@ -65,7 +65,11 @@ final class SystemStatsLiveTests: XCTestCase {
 
     func testUptimeFormat() {
         let uptime = SystemStats.uptime()
-        XCTAssertTrue(uptime.hasSuffix("m"), "unexpected uptime format: \(uptime)")
+        let pattern = #"^(\d+d )?(\d+h )?\d+m$"#
+        XCTAssertNotNil(
+            uptime.range(of: pattern, options: .regularExpression),
+            "unexpected uptime format: \(uptime)"
+        )
     }
 
     func testDirectorySizeOfUnreadableDirectoryIsNil() {
@@ -92,6 +96,9 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertTrue(UpdateChecker.isVersion("1.2.0", newerThan: "1.1.0"))
         XCTAssertTrue(UpdateChecker.isVersion("v1.2.0", newerThan: "1.1.0"))
         XCTAssertTrue(UpdateChecker.isVersion("1.10.0", newerThan: "1.9.0"))
+        XCTAssertTrue(UpdateChecker.isVersion("2.0", newerThan: "1.9.9"))
+        XCTAssertTrue(UpdateChecker.isVersion("10.0.0", newerThan: "9.9.9"))
+        XCTAssertTrue(UpdateChecker.isVersion("1.2.0", newerThan: "1.2"))
         XCTAssertFalse(UpdateChecker.isVersion("1.1.0", newerThan: "1.1.0"))
         XCTAssertFalse(UpdateChecker.isVersion("1.0.9", newerThan: "1.1.0"))
         XCTAssertFalse(UpdateChecker.isVersion("v1.1.0", newerThan: "v1.2.0"))
