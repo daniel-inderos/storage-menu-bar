@@ -167,6 +167,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.autoenablesItems = false
 
         volumeItem.attributedTitle = headerTitle("Storage")
+        availableItem.toolTip = "What Finder reports: truly free space plus purgeable files macOS can remove automatically when space is needed."
+        freeItem.toolTip = "Space that is free right now, before macOS purges anything; the +X purgeable part is what the system could reclaim."
+        usedItem.toolTip = "Total capacity minus available."
         volumesItem.submenu = volumesMenu
         volumesItem.isHidden = true
         volumesMenu.autoenablesItems = false
@@ -278,6 +281,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let updatesItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
         updatesItem.target = self
         settingsMenu.addItem(updatesItem)
+
+        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        let aboutItem = NSMenuItem(title: "About StorageBar (v\(appVersion))", action: #selector(openAboutPage), keyEquivalent: "")
+        aboutItem.target = self
+        aboutItem.toolTip = "Opens the StorageBar GitHub page"
+        settingsMenu.addItem(.separator())
+        settingsMenu.addItem(aboutItem)
 
         updateSettingsChecks()
     }
@@ -544,6 +554,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async { [weak self] in
                 self?.showUpdateResult(result)
             }
+        }
+    }
+
+    @objc private func openAboutPage() {
+        if let url = URL(string: "https://github.com/daniel-inderos/storage-menu-bar") {
+            NSWorkspace.shared.open(url)
         }
     }
 
