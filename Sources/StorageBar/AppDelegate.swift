@@ -29,14 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let healthItem = NSMenuItem()
 
     // Reclaim Space submenu
-    private struct ReclaimTarget {
-        let label: String
-        let url: URL
-    }
     private let reclaimMenu = NSMenu()
-    private var reclaimRows: [(target: ReclaimTarget, item: NSMenuItem)] = []
-    private var reclaimScannedAt: Date?
-    private var reclaimScanning = false
+    private lazy var reclaimScanner = ReclaimScanner()
+    private var reclaimRows: [(target: ReclaimScanner.Target, item: NSMenuItem)] = []
     private let grantAccessSeparator = NSMenuItem.separator()
     private let grantAccessItem = NSMenuItem(title: "Grant Full Disk Access…", action: #selector(openFullDiskAccess), keyEquivalent: "")
 
@@ -203,30 +198,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func buildReclaimMenu() {
         reclaimMenu.autoenablesItems = false
+        reclaimMenu.delegate = self
 
         let storageSettings = NSMenuItem(title: "Open Storage Settings…", action: #selector(openStorageSettings), keyEquivalent: "")
         storageSettings.target = self
         reclaimMenu.addItem(storageSettings)
         reclaimMenu.addItem(.separator())
 
-        let fm = FileManager.default
-        var targets: [ReclaimTarget] = []
-        if let trash = fm.urls(for: .trashDirectory, in: .userDomainMask).first {
-            targets.append(ReclaimTarget(label: "Trash", url: trash))
-        }
-        if let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first {
-            targets.append(ReclaimTarget(label: "Downloads", url: downloads))
-        }
-        let derivedData = fm.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Developer/Xcode/DerivedData")
-        if fm.fileExists(atPath: derivedData.path) {
-            targets.append(ReclaimTarget(label: "DerivedData", url: derivedData))
-        }
-        if let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask).first {
-            targets.append(ReclaimTarget(label: "Caches", url: caches))
-        }
-
-        for target in targets {
+        for target in reclaimScanner.targets {
             let item = NSMenuItem(title: target.label, action: #selector(revealTarget(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = target.url
@@ -441,47 +420,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Reclaim Space scanning
 
     private func scanReclaimTargetsIfStale() {
-        guard !reclaimScanning else { return }
-        if let scannedAt = reclaimScannedAt, Date().timeIntervalSince(scannedAt) < 300 { return }
-        reclaimScanning = true
-        let rows = reclaimRows
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            var anyDenied = false
-            for (target, item) in rows {
-                let size = SystemStats.directorySize(target.url)
-                if size == nil { anyDenied = true }
-                DispatchQueue.main.async {
-                    if let size {
-                        item.attributedTitle = self?.infoTitle(target.label, SystemStats.formatBytes(size))
-                        item.toolTip = "Show in Finder"
-                    } else {
-                        item.attributedTitle = self?.infoTitle(target.label, "no access")
-                        item.toolTip = "StorageBar can't read this folder. Click to open it in Finder."
-                    }
+        reclaimScanner.scanIfStale { [weak self] target, result in
+            guard let self,
+                  let item = reclaimRows.first(where: { $0.target.url == target.url })?.item else { return }
+            switch result {
+            case .size(let size):
+                item.attributedTitle = infoTitle(target.label, SystemStats.formatBytes(size))
+                item.toolTip = "Show in Finder"
+            case .denied, .missing:
+                item.attributedTitle = infoTitle(target.label, "no access")
+                item.toolTip = "StorageBar can't read this folder. Click to open it in Finder."
+            }
+        } completion: { [weak self] results in
+            let denied = results.contains { scanResult in
+                switch scanResult.result {
+                case .size:
+                    return false
+                case .denied, .missing:
+                    return true
                 }
             }
-            let denied = anyDenied
-            DispatchQueue.main.async {
-                self?.grantAccessSeparator.isHidden = !denied
-                self?.grantAccessItem.isHidden = !denied
-                self?.reclaimScanning = false
-                self?.reclaimScannedAt = Date()
-            }
+            self?.grantAccessSeparator.isHidden = !denied
+            self?.grantAccessItem.isHidden = !denied
         }
     }
 
     func menuWillOpen(_ menu: NSMenu) {
-        guard menu === self.menu else { return }
-        refresh()
-        scanReclaimTargetsIfStale()
+        if menu === self.menu {
+            refresh()
+        } else if menu === reclaimMenu {
+            scanReclaimTargetsIfStale()
+        }
     }
 
     // MARK: Actions
 
     @objc private func refreshClicked() {
-        reclaimScannedAt = nil
+        reclaimScanner.invalidateCache()
         refresh()
-        scanReclaimTargetsIfStale()
     }
 
     @objc private func revealTarget(_ sender: NSMenuItem) {
