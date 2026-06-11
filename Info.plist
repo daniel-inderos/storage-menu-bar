@@ -7,7 +7,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>StorageBar</string>
 	<key>CFBundleIdentifier</key>
-	<string>local.storagebar.app</string>
+	<string>io.github.daniel-inderos.StorageBar</string>
 	<key>CFBundleVersion</key>
 	<string>1.2.1</string>
 	<key>CFBundleShortVersionString</key>

@@ -44,6 +44,11 @@ just a Swift package you can build and run in seconds.
 
 ## Install
 
+### Upgrading from 1.2.x or earlier
+
+Your settings carry over automatically. Launch at Login and Full Disk Access
+need one re-grant because the app identity changed.
+
 ### Build from source (recommended)
 
 Requires macOS 13+ and a Swift toolchain (Xcode or Command Line Tools).

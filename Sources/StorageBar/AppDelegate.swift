@@ -48,6 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lowSpaceNotified = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Prefs.migrateLegacyDefaults()
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "internaldrive", accessibilityDescription: "Storage")
