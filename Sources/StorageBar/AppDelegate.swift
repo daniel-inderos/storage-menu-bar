@@ -55,9 +55,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
         }
 
+        let args = ProcessInfo.processInfo.arguments
+        let isScreenshotMenuRun = args.contains("--screenshot-menu")
+
         buildMenu()
         statusItem.menu = menu
         menu.delegate = self
+
+        if !isScreenshotMenuRun {
+            // Ask at launch so low-space events can deliver warnings immediately.
+            requestNotificationAuthorizationIfNeeded()
+        }
 
         // Prime the CPU tick baseline so the first real refresh has a delta.
         _ = SystemStats.cpuUsage()
@@ -66,7 +74,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Hidden flag used by tooling: opens the menu, captures it to a PNG, and exits.
         // Capturing our own window doesn't require screen recording permission.
-        let args = ProcessInfo.processInfo.arguments
         if let flagIndex = args.firstIndex(of: "--screenshot-menu"), flagIndex + 1 < args.count {
             let path = args[flagIndex + 1]
             // Menu tracking blocks the main run loop in event-tracking mode, so the
@@ -350,16 +357,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private func requestNotificationAuthorizationIfNeeded() {
+        // UNUserNotificationCenter requires an app bundle (not a bare `swift run` binary).
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .notDetermined else { return }
+            center.requestAuthorization(options: [.alert]) { _, _ in }
+        }
+    }
+
     private func postLowSpaceNotification(_ disk: DiskInfo) {
         // UNUserNotificationCenter requires an app bundle (not a bare `swift run` binary).
         guard Bundle.main.bundleIdentifier != nil else { return }
         let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert]) { granted, _ in
-            guard granted else { return }
+        func post() {
             let content = UNMutableNotificationContent()
             content.title = "Low Disk Space"
             content.body = "\(disk.volumeName) has \(SystemStats.formatBytes(disk.available)) available."
             center.add(UNNotificationRequest(identifier: "low-disk-space", content: content, trigger: nil))
+        }
+        center.getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .authorized, .provisional:
+                post()
+            case .notDetermined:
+                center.requestAuthorization(options: [.alert]) { granted, _ in
+                    guard granted else { return }
+                    post()
+                }
+            case .denied:
+                return
+            @unknown default:
+                return
+            }
         }
     }
 
