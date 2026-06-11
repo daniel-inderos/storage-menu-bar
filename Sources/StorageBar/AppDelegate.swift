@@ -14,6 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let usedItem = NSMenuItem()
     private let volumesItem = NSMenuItem(title: "Volumes", action: nil, keyEquivalent: "")
     private let volumesMenu = NSMenu()
+    private var volumeSnapshot: [VolumeInfo] = []
+    private var isEnumeratingVolumes = false
 
     // System section
     private let systemHeaderItem = NSMenuItem()
@@ -377,7 +379,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func refreshVolumes() {
-        let volumes = SystemStats.otherVolumes()
+        renderVolumes(volumeSnapshot)
+        enumerateVolumesIfNeeded()
+    }
+
+    private func renderVolumes(_ volumes: [VolumeInfo]) {
         volumesItem.isHidden = volumes.isEmpty
         volumesMenu.removeAllItems()
         for volume in volumes {
@@ -387,6 +393,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.attributedTitle = infoTitle(volume.name, "\(SystemStats.formatBytesShort(volume.available)) free of \(SystemStats.formatBytesShort(volume.total))")
             item.toolTip = "Show in Finder"
             volumesMenu.addItem(item)
+        }
+    }
+
+    private func enumerateVolumesIfNeeded() {
+        guard !isEnumeratingVolumes else { return }
+        isEnumeratingVolumes = true
+
+        // Stale SMB/NFS mounts can block URLResourceValues stat calls for
+        // seconds, and refresh() runs on the main thread from menuWillOpen.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let volumes = SystemStats.otherVolumes()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                defer { self.isEnumeratingVolumes = false }
+                self.volumeSnapshot = volumes
+                self.renderVolumes(volumes)
+            }
         }
     }
 
