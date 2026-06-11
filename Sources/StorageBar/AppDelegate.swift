@@ -327,41 +327,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateStatusButton(with disk: DiskInfo) {
         guard let button = statusItem.button else { return }
-        switch Prefs.display {
-        case .freeSpace:
-            button.title = " " + SystemStats.formatBytesShort(disk.available)
-        case .usedPercent:
-            button.title = String(format: " %.0f%%", disk.usedFraction * 100)
-        case .iconOnly:
-            button.title = ""
-        }
-
-        let availableGB = Double(disk.available) / 1_000_000_000
-        let warnGB = Double(Prefs.warnBelowGB)
-        if warnGB > 0 && availableGB < warnGB / 2 {
+        button.title = StatusPresentation.title(for: disk, display: Prefs.display)
+        switch StatusPresentation.severity(forAvailableBytes: disk.available, warnBelowGB: Prefs.warnBelowGB) {
+        case .critical:
             button.contentTintColor = .systemRed
-        } else if warnGB > 0 && availableGB < warnGB {
+        case .warning:
             button.contentTintColor = .systemOrange
-        } else {
+        case .normal:
             button.contentTintColor = nil
         }
     }
 
     private func checkLowSpace(_ disk: DiskInfo) {
-        let warnGB = Double(Prefs.warnBelowGB)
-        guard warnGB > 0 else {
-            lowSpaceNotified = false
-            return
-        }
-        let availableGB = Double(disk.available) / 1_000_000_000
-        if availableGB < warnGB {
-            if !lowSpaceNotified {
-                lowSpaceNotified = true
-                postLowSpaceNotification(disk)
-            }
-        } else if availableGB > warnGB * 1.1 {
-            // Hysteresis: re-arm only once comfortably back above the threshold.
-            lowSpaceNotified = false
+        let transition = StatusPresentation.lowSpaceTransition(
+            availableBytes: disk.available,
+            warnBelowGB: Prefs.warnBelowGB,
+            alreadyNotified: lowSpaceNotified
+        )
+        lowSpaceNotified = transition.newNotifiedFlag
+        if transition.shouldNotify {
+            postLowSpaceNotification(disk)
         }
     }
 
