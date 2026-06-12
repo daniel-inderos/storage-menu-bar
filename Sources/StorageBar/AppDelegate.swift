@@ -552,8 +552,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func checkForUpdates() {
-        UpdateChecker.fetchLatest { result in
-            DispatchQueue.main.async { [weak self] in
+        UpdateChecker.fetchLatest { [weak self] result in
+            DispatchQueue.main.async {
                 self?.showUpdateResult(result)
             }
         }
