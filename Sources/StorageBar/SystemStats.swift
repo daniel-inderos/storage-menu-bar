@@ -192,18 +192,19 @@ enum SystemStats {
                 .takeUnretainedValue() as? [String: Any],
                   let current = desc[kIOPSCurrentCapacityKey] as? Int,
                   let max = desc[kIOPSMaxCapacityKey] as? Int, max > 0 else { continue }
-            // Time estimates are in minutes; 0 or -1 means unknown / still calculating.
+            // Time estimates are in minutes; 0, -1, or 65535 mean unknown / still calculating.
             func minutes(_ key: String) -> Int? {
-                guard let value = desc[key] as? Int, value > 0 else { return nil }
-                return value
+                batteryMinutes(desc[key] as? Int)
             }
             let details = smartBatteryDetails()
+            let isCharging = (desc[kIOPSIsChargingKey] as? Bool) ?? false
+            let timeToFull = minutes(kIOPSTimeToFullChargeKey) ?? details.timeToFull
             return BatteryInfo(
                 percent: current * 100 / max,
-                isCharging: (desc[kIOPSIsChargingKey] as? Bool) ?? false,
+                isCharging: isCharging,
                 onACPower: (desc[kIOPSPowerSourceStateKey] as? String) == kIOPSACPowerValue,
                 timeToEmpty: minutes(kIOPSTimeToEmptyKey),
-                timeToFull: minutes(kIOPSTimeToFullChargeKey),
+                timeToFull: isCharging ? timeToFull : nil,
                 cycleCount: details.cycleCount,
                 healthPercent: details.healthPercent
             )
@@ -213,9 +214,9 @@ enum SystemStats {
 
     /// Cycle count and health from the battery's IORegistry entry. MaxCapacity is
     /// normalized to 100 on Apple Silicon, so prefer the raw capacity readings.
-    private static func smartBatteryDetails() -> (cycleCount: Int?, healthPercent: Int?) {
+    private static func smartBatteryDetails() -> (cycleCount: Int?, healthPercent: Int?, timeToFull: Int?) {
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
-        guard service != 0 else { return (nil, nil) }
+        guard service != 0 else { return (nil, nil, nil) }
         defer { IOObjectRelease(service) }
         func intProp(_ key: String) -> Int? {
             IORegistryEntryCreateCFProperty(service, key as CFString, kCFAllocatorDefault, 0)?
@@ -230,7 +231,54 @@ enum SystemStats {
             // A fresh battery's raw capacity can exceed its design capacity; cap at 100.
             health = min(100, Int((Double(maxCapacity) / Double(design) * 100).rounded()))
         }
-        return (cycles, health)
+        let telemetry = IORegistryEntryCreateCFProperty(service, "PowerTelemetryData" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? [String: Any]
+        let estimatedTimeToFull = batteryMinutes(intProp("AvgTimeToFull"))
+            ?? estimatedChargeMinutes(
+                currentCapacity: intProp("AppleRawCurrentCapacity"),
+                maxCapacity: intProp("AppleRawMaxCapacity") ?? intProp("NominalChargeCapacity"),
+                chargeRateMilliamps: telemetryChargeRateMilliamps(
+                    batteryPowerMilliwatts: telemetry?["BatteryPower"] as? Int,
+                    voltageMillivolts: intProp("Voltage")
+                ) ?? batteryChargeRateMilliamps(intProp("Amperage") ?? intProp("InstantAmperage"))
+            )
+        return (cycles, health, estimatedTimeToFull)
+    }
+
+    private static func batteryMinutes(_ value: Int?) -> Int? {
+        guard let value, value > 0, value < 7 * 24 * 60 else { return nil }
+        return value
+    }
+
+    private static func estimatedChargeMinutes(
+        currentCapacity: Int?,
+        maxCapacity: Int?,
+        chargeRateMilliamps: Int?
+    ) -> Int? {
+        guard let currentCapacity,
+              let maxCapacity,
+              maxCapacity > currentCapacity,
+              let chargeRateMilliamps,
+              chargeRateMilliamps >= 100 else { return nil }
+        let remaining = maxCapacity - currentCapacity
+        let linearMinutes = Double(remaining) / Double(chargeRateMilliamps) * 60
+        return batteryMinutes(Int((linearMinutes * 1.2).rounded()))
+    }
+
+    private static func telemetryChargeRateMilliamps(
+        batteryPowerMilliwatts: Int?,
+        voltageMillivolts: Int?
+    ) -> Int? {
+        guard let batteryPowerMilliwatts,
+              batteryPowerMilliwatts < 0,
+              let voltageMillivolts,
+              voltageMillivolts > 0 else { return nil }
+        return abs(batteryPowerMilliwatts) * 1000 / voltageMillivolts
+    }
+
+    private static func batteryChargeRateMilliamps(_ amperage: Int?) -> Int? {
+        guard let amperage, amperage != 0 else { return nil }
+        return abs(amperage)
     }
 
     // MARK: Formatting

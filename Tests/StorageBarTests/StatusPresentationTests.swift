@@ -87,4 +87,35 @@ final class StatusPresentationTests: XCTestCase {
         XCTAssertFalse(transition.shouldNotify)
         XCTAssertFalse(transition.newNotifiedFlag)
     }
+
+    func testChargeTextIncludesFullChargeEstimateWhenCharging() {
+        let battery = BatteryInfo(
+            percent: 30,
+            isCharging: true,
+            onACPower: true,
+            timeToEmpty: nil,
+            timeToFull: 712,
+            cycleCount: nil,
+            healthPercent: nil
+        )
+
+        XCTAssertEqual(
+            StatusPresentation.chargeText(for: battery),
+            "30% — charging · est. 11h 52m to full"
+        )
+    }
+
+    func testChargeTextKeepsDischargeEstimate() {
+        let battery = BatteryInfo(
+            percent: 64,
+            isCharging: false,
+            onACPower: false,
+            timeToEmpty: 95,
+            timeToFull: nil,
+            cycleCount: nil,
+            healthPercent: nil
+        )
+
+        XCTAssertEqual(StatusPresentation.chargeText(for: battery), "64% · 1h 35m left")
+    }
 }

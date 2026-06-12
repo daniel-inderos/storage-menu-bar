@@ -449,16 +449,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
 
-        var charge = "\(battery.percent)%"
-        if battery.isCharging {
-            charge += " — charging"
-            if let toFull = battery.timeToFull { charge += " · \(SystemStats.formatMinutes(toFull)) to full" }
-        } else if battery.onACPower {
-            charge += battery.percent == 100 ? " — charged" : " — on hold"
-        } else if let toEmpty = battery.timeToEmpty {
-            charge += " · \(SystemStats.formatMinutes(toEmpty)) left"
-        }
-        chargeItem.attributedTitle = infoTitle("Charge", charge)
+        chargeItem.attributedTitle = infoTitle("Charge", StatusPresentation.chargeText(for: battery))
         powerItem.attributedTitle = infoTitle("Power", battery.onACPower ? "AC Power" : "Battery")
 
         var healthParts: [String] = []

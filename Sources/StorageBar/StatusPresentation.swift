@@ -52,4 +52,19 @@ enum StatusPresentation {
             return (shouldNotify: false, newNotifiedFlag: alreadyNotified)
         }
     }
+
+    static func chargeText(for battery: BatteryInfo) -> String {
+        var charge = "\(battery.percent)%"
+        if battery.isCharging {
+            charge += " — charging"
+            if let toFull = battery.timeToFull {
+                charge += " · est. \(SystemStats.formatMinutes(toFull)) to full"
+            }
+        } else if battery.onACPower {
+            charge += battery.percent == 100 ? " — charged" : " — on hold"
+        } else if let toEmpty = battery.timeToEmpty {
+            charge += " · \(SystemStats.formatMinutes(toEmpty)) left"
+        }
+        return charge
+    }
 }
