@@ -92,10 +92,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func startTimer() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: Prefs.refreshInterval, repeats: true) { [weak self] _ in
+        // Use .common so the timer keeps firing while a menu is open (event-tracking mode).
+        let newTimer = Timer(timeInterval: Prefs.refreshInterval, repeats: true) { [weak self] _ in
             self?.refresh()
         }
-        timer?.tolerance = Prefs.refreshInterval / 6
+        newTimer.tolerance = Prefs.refreshInterval / 6
+        RunLoop.main.add(newTimer, forMode: .common)
+        timer = newTimer
     }
 
     private func captureMenuScreenshot(to path: String) {
@@ -266,7 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         settingsMenu.addItem(.separator())
         addHeader("Refresh Every")
-        for (label, seconds) in [("10 seconds", 10.0), ("30 seconds", 30.0), ("1 minute", 60.0), ("5 minutes", 300.0)] {
+        for (label, seconds) in [("1 second", 1.0), ("10 seconds", 10.0), ("30 seconds", 30.0), ("1 minute", 60.0), ("5 minutes", 300.0)] {
             intervalItems.append(addChoice(label, #selector(selectInterval(_:)), seconds))
         }
 
