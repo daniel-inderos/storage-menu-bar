@@ -88,7 +88,10 @@ jobs:
           mkdir -p ~/.ssh
           echo "$TAP_DEPLOY_KEY" > ~/.ssh/tap_key
           chmod 600 ~/.ssh/tap_key
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          # Trust GitHub's SSH host keys via the TLS-authenticated meta API
+          # instead of trust-on-first-use ssh-keyscan.
+          curl -fsSL https://api.github.com/meta \
+            | jq -r '.ssh_keys[] | "github.com \(.)"' > ~/.ssh/known_hosts
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/tap_key -o IdentitiesOnly=yes"
           git clone git@github.com:daniel-inderos/homebrew-tap.git tap
           cd tap
