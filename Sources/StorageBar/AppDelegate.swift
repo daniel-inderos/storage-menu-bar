@@ -250,6 +250,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func buildSettingsMenu() {
         settingsMenu.autoenablesItems = false
+        // Refresh checkmarks, including the launchd status query, on open instead of every tick.
+        settingsMenu.delegate = self
 
         func addHeader(_ text: String) {
             let item = NSMenuItem()
@@ -356,7 +358,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         uptimeItem.attributedTitle = infoTitle("Uptime", SystemStats.uptime())
 
         refreshBattery()
-        updateSettingsChecks()
     }
 
     private func updateStatusButton(with disk: DiskInfo) {
@@ -531,6 +532,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             refreshAll()
         } else if menu === reclaimMenu {
             scanReclaimTargetsIfStale()
+        } else if menu === settingsMenu {
+            updateSettingsChecks()
         }
     }
 
@@ -613,6 +616,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
               let display = MenuBarDisplay(rawValue: raw) else { return }
         Prefs.display = display
         refreshStatusBar()
+        updateSettingsChecks()
     }
 
     @objc private func selectInterval(_ sender: NSMenuItem) {
@@ -627,6 +631,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Prefs.warnBelowGB = gb
         lowSpaceNotified = false
         refreshStatusBar()
+        updateSettingsChecks()
     }
 
     @objc private func toggleLaunchAtLogin() {
