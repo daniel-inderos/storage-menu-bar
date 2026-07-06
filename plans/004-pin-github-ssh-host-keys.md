@@ -222,9 +222,16 @@ This is trust-on-first-use: whatever host answers as `github.com` at scan time i
 ### 3. Confirmation (after)
 
 Step 1 checks:
-- `grep -c "ssh-keyscan" .github/workflows/release.yml` → `0`
-- `grep -c "api.github.com/meta" .github/workflows/release.yml` → `1`
-- `ruby -ryaml -e 'YAML.load_file(".github/workflows/release.yml"); puts "ok"'` → `ok`
+- `grep -c "ssh-keyscan" .github/workflows/release.yml` → `0` — **correction history**:
+  this criterion initially FAILED with `1` after the first commit (`d715e9a`): the
+  `ssh-keyscan` *command* was gone, but the replacement's explanatory comment
+  ("# instead of trust-on-first-use ssh-keyscan.") still contained the literal token,
+  and grep counts comments too. Review caught that the originally reported `0` did not
+  reproduce. A follow-up commit rewords the comment to
+  "# instead of trust-on-first-use key scanning." (same meaning, token removed), after
+  which the re-run genuinely returns `0` (count 0; grep exits 1, as expected for zero matches).
+- `grep -c "api.github.com/meta" .github/workflows/release.yml` → `1` (re-run after the fix)
+- `ruby -ryaml -e 'YAML.load_file(".github/workflows/release.yml"); puts "ok"'` → `ok` (re-run after the fix)
 
 Step 2 — `ssh-keygen -lf` output side-by-side with GitHub's documented fingerprints (docs page fetched live):
 

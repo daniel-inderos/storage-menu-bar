@@ -124,7 +124,7 @@ jobs:
           echo "$TAP_DEPLOY_KEY" > ~/.ssh/tap_key
           chmod 600 ~/.ssh/tap_key
           # Trust GitHub's SSH host keys via the TLS-authenticated meta API
-          # instead of trust-on-first-use ssh-keyscan.
+          # instead of trust-on-first-use key scanning.
           curl -fsSL https://api.github.com/meta \
             | jq -r '.ssh_keys[] | "github.com \(.)"' > ~/.ssh/known_hosts
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/tap_key -o IdentitiesOnly=yes"

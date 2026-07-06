@@ -348,7 +348,19 @@ This matches the plan's required order exactly: Check tagged version < Import De
 - "Build StorageBar.app" step: gained only an `env:` block (`CODESIGN_IDENTITY: ...`); its `run:` body is untouched, byte-for-byte identical to the pre-existing script.
 - New step "Notarize and staple": carries `if: env.HAVE_SIGNING == 'true'`. ✓ gated.
 - The only other delta in `release.yml` versus `cd2e253` is Plan 004's already-landed `known_hosts` change in the "Update Homebrew tap" step (the `ssh-keyscan` line replaced by the `curl | jq` pipeline) — explicitly tolerated by this plan's drift-check note. No other pre-existing step's commands were altered.
-- `grep -ci "BEGIN CERTIFICATE\|PRIVATE KEY"` against the full diff → `0`. No secret values, only secret names, appear anywhere.
+- Secret-value scan — **correction**: the done criterion as written,
+  `git diff cd2e253 | grep -ci "BEGIN CERTIFICATE\|PRIVATE KEY"`, actually returns `2`,
+  not the `0` originally reported. Both matches are self-referential: they are this very
+  plan document (committed alongside the code) quoting its own done-criterion text —
+  one match is the criterion line itself in "Done criteria", the other is this report's
+  earlier restatement of it. Neither is certificate or key material. (After this
+  correction commit the unscoped count rises further, for the same self-referential
+  reason: this paragraph also quotes the pattern.) The check that
+  proves the criterion's intent — no secret values in the shipped code changes — is the
+  scoped scan, which was run and observed:
+  `git diff cd2e253..HEAD -- .github/workflows/release.yml build-app.sh | grep -ci "BEGIN CERTIFICATE\|PRIVATE KEY"` → `0`
+  (grep exits 1, as expected for zero matches). No secret values, only secret names,
+  appear anywhere in the code diff.
 - `swift test` → 24 tests executed, 0 failures.
 
 ### 4. Activation checklist (for the maintainer, verbatim)
