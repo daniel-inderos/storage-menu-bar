@@ -26,7 +26,14 @@ if [[ " $ARCHS " != *" arm64 "* || " $ARCHS " != *" x86_64 "* ]]; then
   exit 1
 fi
 
-# Ad-hoc sign so macOS treats the bundle as a stable identity
-codesign --force --sign - "$APP"
+# Sign the bundle. Default is ad-hoc (stable local identity, no Apple account).
+# Set CODESIGN_IDENTITY to a "Developer ID Application: ..." identity to produce
+# a distributable build; hardened runtime + timestamp are notarization requirements.
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
+if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
+  codesign --force --sign - "$APP"
+else
+  codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP"
+fi
 
 echo "Built $APP — run with: open $APP"
