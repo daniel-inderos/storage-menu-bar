@@ -38,6 +38,18 @@ final class DiskInfoTests: XCTestCase {
     }
 }
 
+final class VolumeInfoTests: XCTestCase {
+    func testEquatableComparesAllFields() {
+        let url = URL(fileURLWithPath: "/Volumes/Test")
+        let volume = VolumeInfo(url: url, name: "Test", total: 1000, available: 400)
+        let matchingVolume = VolumeInfo(url: url, name: "Test", total: 1000, available: 400)
+        let differentAvailable = VolumeInfo(url: url, name: "Test", total: 1000, available: 399)
+
+        XCTAssertEqual(volume, matchingVolume)
+        XCTAssertNotEqual(volume, differentAvailable)
+    }
+}
+
 final class SystemStatsLiveTests: XCTestCase {
     func testDiskReturnsPlausibleValues() throws {
         let disk = try XCTUnwrap(SystemStats.disk())

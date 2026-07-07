@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let volumesMenu = NSMenu()
     private var volumeSnapshot: [VolumeInfo] = []
     private var isEnumeratingVolumes = false
+    private var lastVolumeEnumeration: Date?
+    private static let volumeEnumerationInterval: TimeInterval = 10
 
     // System section
     private let systemHeaderItem = NSMenuItem()
@@ -423,7 +425,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func refreshVolumes() {
-        renderVolumes(volumeSnapshot)
         enumerateVolumesIfNeeded()
     }
 
@@ -441,6 +442,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func enumerateVolumesIfNeeded() {
+        // Stat-ing every mounted volume each tick can keep network mounts awake.
+        if let last = lastVolumeEnumeration,
+           Date().timeIntervalSince(last) < Self.volumeEnumerationInterval { return }
         guard !isEnumeratingVolumes else { return }
         isEnumeratingVolumes = true
 
@@ -451,6 +455,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async {
                 guard let self else { return }
                 defer { self.isEnumeratingVolumes = false }
+                self.lastVolumeEnumeration = Date()
+                guard volumes != self.volumeSnapshot else { return }
                 self.volumeSnapshot = volumes
                 self.renderVolumes(volumes)
             }
@@ -547,6 +553,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func refreshClicked() {
         reclaimScanner.invalidateCache()
+        lastVolumeEnumeration = nil
         refreshAll()
     }
 
