@@ -12,7 +12,7 @@ final class ReclaimScanner {
         let accessHint: AccessHint
     }
 
-    enum Result {
+    enum Result: Equatable {
         case size(Int64)
         case denied
         case missing
@@ -23,13 +23,19 @@ final class ReclaimScanner {
     private static let cacheDuration: TimeInterval = 300
 
     private let fileManager: FileManager
+    private let now: () -> Date
     private(set) var targets: [Target]
     private var scannedAt: Date?
     private var isScanning = false
 
-    init(fileManager: FileManager = .default) {
+    init(
+        fileManager: FileManager = .default,
+        targets: [Target]? = nil,
+        now: @escaping () -> Date = Date.init
+    ) {
         self.fileManager = fileManager
-        targets = Self.defaultTargets(fileManager: fileManager)
+        self.now = now
+        self.targets = targets ?? Self.defaultTargets(fileManager: fileManager)
     }
 
     func invalidateCache() {
@@ -41,11 +47,12 @@ final class ReclaimScanner {
         completion: @escaping ([ScanResult]) -> Void
     ) {
         guard !isScanning else { return }
-        if let scannedAt, Date().timeIntervalSince(scannedAt) < Self.cacheDuration { return }
+        if let scannedAt, now().timeIntervalSince(scannedAt) < Self.cacheDuration { return }
 
         isScanning = true
         let fileManager = fileManager
         let targets = targets
+        let now = now
         DispatchQueue.global(qos: .utility).async { [weak self] in
             var scanResults: [ScanResult] = []
             for target in targets {
@@ -57,7 +64,7 @@ final class ReclaimScanner {
             }
             DispatchQueue.main.async { [weak self] in
                 self?.isScanning = false
-                self?.scannedAt = Date()
+                self?.scannedAt = now()
                 completion(scanResults)
             }
         }
