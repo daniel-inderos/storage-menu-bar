@@ -13,9 +13,9 @@ Verification baseline at planning time: `swift test` → 24 tests, 0 failures.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001 | Make refresh cost proportional to what is visible | P1 | M | — | DONE (approved 2026-07-06; branch `worktree-agent-a021bd63697490c7b`, commits `95ce647`+`e7c595b`+`bd9d6d4`, awaiting user merge) |
-| 002 | Put the battery estimation helpers under test | P2 | S | — | DONE (approved 2026-07-06; branch `worktree-agent-a76bed21817b3cbaa`, commit `a6988fc`, awaiting user merge) |
-| 003 | Put ReclaimScanner's cache and result mapping under test | P3 | M | — | DONE (approved 2026-07-06; branch `worktree-agent-af270119c60e8d56e`, commits `fbcd88e`+`f94115c`, awaiting user merge) |
+| 001 | Make refresh cost proportional to what is visible | P1 | M | — | DONE (approved 2026-07-06; branch `worktree-agent-a021bd63697490c7b`, commits `95ce647`+`e7c595b`+`bd9d6d4`; merged to main dc2523a) |
+| 002 | Put the battery estimation helpers under test | P2 | S | — | DONE (approved 2026-07-06; branch `worktree-agent-a76bed21817b3cbaa`, commit `a6988fc`; merged to main dc2523a) |
+| 003 | Put ReclaimScanner's cache and result mapping under test | P3 | M | — | DONE (approved 2026-07-06; branch `worktree-agent-af270119c60e8d56e`, commits `fbcd88e`+`f94115c`; merged to main dc2523a) |
 | 004 | Replace ssh-keyscan TOFU with verified GitHub host keys | P2 | S | — | DONE (approved 2026-07-06 after 1 revision; branch `advisor/005-notarization-prep`, commits `d715e9a`+`ba63c13`; live e2e proof at next `v*` tag) |
 | 005 | Developer ID signing + notarization pipeline (dormant) | P1 | M | 004 (landed on same branch) | DONE-DORMANT (approved 2026-07-06; commits `b57a5ce`+`2b530ab`; activates when the six signing secrets are configured — checklist in plan) |
 
@@ -57,10 +57,7 @@ Status values: TODO | IN PROGRESS | DONE | DONE-DORMANT (005 only: built, awaiti
   `memory.used < memory.total`, which can wobble under memory pressure). If it
   recurs in CI, that's a small follow-up finding: loosen or retry the live tests.
 
-## Housekeeping (no plan needed)
+## Housekeeping (completed 2026-07-06)
 
-- Delete merged branches: `git branch -d expert-review-fixes 1sec-refresh`
-  (both verified content-identical to main at `cd2e253`); also delete
-  `origin/1sec-refresh` if desired.
-- `prompt-exports/` (untracked, ~1,630-line conversation dump) — add to
-  `.gitignore` or remove; it should not ride along into any future commit.
+- Merged branches deleted (local + `origin/1sec-refresh`); executor worktrees removed.
+- `prompt-exports/` and `.claude/` added to `.gitignore`.
