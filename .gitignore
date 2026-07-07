@@ -2,3 +2,5 @@
 StorageBar.app/
 .DS_Store
 .swiftpm/
+prompt-exports/
+.claude/
