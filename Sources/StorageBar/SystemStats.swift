@@ -245,12 +245,12 @@ enum SystemStats {
         return (cycles, health, estimatedTimeToFull)
     }
 
-    private static func batteryMinutes(_ value: Int?) -> Int? {
+    static func batteryMinutes(_ value: Int?) -> Int? {
         guard let value, value > 0, value < 7 * 24 * 60 else { return nil }
         return value
     }
 
-    private static func estimatedChargeMinutes(
+    static func estimatedChargeMinutes(
         currentCapacity: Int?,
         maxCapacity: Int?,
         chargeRateMilliamps: Int?
@@ -265,7 +265,7 @@ enum SystemStats {
         return batteryMinutes(Int((linearMinutes * 1.2).rounded()))
     }
 
-    private static func telemetryChargeRateMilliamps(
+    static func telemetryChargeRateMilliamps(
         batteryPowerMilliwatts: Int?,
         voltageMillivolts: Int?
     ) -> Int? {
@@ -276,7 +276,7 @@ enum SystemStats {
         return abs(batteryPowerMilliwatts) * 1000 / voltageMillivolts
     }
 
-    private static func batteryChargeRateMilliamps(_ amperage: Int?) -> Int? {
+    static func batteryChargeRateMilliamps(_ amperage: Int?) -> Int? {
         guard let amperage, amperage != 0 else { return nil }
         return abs(amperage)
     }
