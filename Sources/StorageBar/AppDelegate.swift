@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let volumesMenu = NSMenu()
     private var volumeSnapshot: [VolumeInfo] = []
     private var isEnumeratingVolumes = false
+    private var lastVolumeEnumeration: Date?
+    private static let volumeEnumerationInterval: TimeInterval = 10
 
     // System section
     private let systemHeaderItem = NSMenuItem()
@@ -46,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
 
     private var lowSpaceNotified = false
+    private var isMenuOpen = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Prefs.migrateLegacyDefaults()
@@ -71,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Prime the CPU tick baseline so the first real refresh has a delta.
         _ = SystemStats.cpuUsage()
-        refresh()
+        refreshAll()
         startTimer()
 
         // Hidden flag used by tooling: opens the menu, captures it to a PNG, and exits.
@@ -94,7 +97,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         timer?.invalidate()
         // Use .common so the timer keeps firing while a menu is open (event-tracking mode).
         let newTimer = Timer(timeInterval: Prefs.refreshInterval, repeats: true) { [weak self] _ in
-            self?.refresh()
+            if let self {
+                self.isMenuOpen ? self.refreshAll() : self.refreshStatusBar()
+            }
         }
         newTimer.tolerance = Prefs.refreshInterval / 6
         RunLoop.main.add(newTimer, forMode: .common)
@@ -247,6 +252,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func buildSettingsMenu() {
         settingsMenu.autoenablesItems = false
+        // Refresh checkmarks, including the launchd status query, on open instead of every tick.
+        settingsMenu.delegate = self
 
         func addHeader(_ text: String) {
             let item = NSMenuItem()
@@ -312,23 +319,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Refresh
 
-    private func refresh() {
+    private func updateStorageItems(with disk: DiskInfo) {
+        volumeItem.attributedTitle = headerTitle(disk.volumeName)
+        availableItem.attributedTitle = infoTitle("Available", "\(SystemStats.formatBytes(disk.available)) of \(SystemStats.formatBytes(disk.total))")
+        if disk.purgeable > 1_000_000_000 {
+            freeItem.attributedTitle = infoTitle("Free now", "\(SystemStats.formatBytes(disk.free)) (+\(SystemStats.formatBytes(disk.purgeable)) purgeable)")
+            freeItem.isHidden = false
+        } else {
+            freeItem.isHidden = true
+        }
+        usedItem.attributedTitle = infoTitle("Used", String(format: "%@ · %.0f%%", SystemStats.formatBytes(disk.used), disk.usedFraction * 100))
+    }
+
+    /// The only work needed while the menu is closed: the status-bar title
+    /// and the low-space warning both derive from the startup disk alone.
+    private func refreshStatusBar() {
         if let disk = SystemStats.disk() {
             updateStatusButton(with: disk)
             checkLowSpace(disk)
-
-            volumeItem.attributedTitle = headerTitle(disk.volumeName)
-            availableItem.attributedTitle = infoTitle("Available", "\(SystemStats.formatBytes(disk.available)) of \(SystemStats.formatBytes(disk.total))")
-            if disk.purgeable > 1_000_000_000 {
-                freeItem.attributedTitle = infoTitle("Free now", "\(SystemStats.formatBytes(disk.free)) (+\(SystemStats.formatBytes(disk.purgeable)) purgeable)")
-                freeItem.isHidden = false
-            } else {
-                freeItem.isHidden = true
-            }
-            usedItem.attributedTitle = infoTitle("Used", String(format: "%@ · %.0f%%", SystemStats.formatBytes(disk.used), disk.usedFraction * 100))
+            updateStorageItems(with: disk)
         } else {
             statusItem.button?.title = " –"
         }
+    }
+
+    private func refreshAll() {
+        refreshStatusBar()
 
         refreshVolumes()
 
@@ -344,7 +360,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         uptimeItem.attributedTitle = infoTitle("Uptime", SystemStats.uptime())
 
         refreshBattery()
-        updateSettingsChecks()
     }
 
     private func updateStatusButton(with disk: DiskInfo) {
@@ -410,7 +425,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func refreshVolumes() {
-        renderVolumes(volumeSnapshot)
         enumerateVolumesIfNeeded()
     }
 
@@ -428,16 +442,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func enumerateVolumesIfNeeded() {
+        // Stat-ing every mounted volume each tick can keep network mounts awake.
+        if let last = lastVolumeEnumeration,
+           Date().timeIntervalSince(last) < Self.volumeEnumerationInterval { return }
         guard !isEnumeratingVolumes else { return }
         isEnumeratingVolumes = true
 
         // Stale SMB/NFS mounts can block URLResourceValues stat calls for
-        // seconds, and refresh() runs on the main thread from menuWillOpen.
+        // seconds, and refreshAll() runs on the main thread from menuWillOpen.
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let volumes = SystemStats.otherVolumes()
             DispatchQueue.main.async {
                 guard let self else { return }
                 defer { self.isEnumeratingVolumes = false }
+                self.lastVolumeEnumeration = Date()
+                guard volumes != self.volumeSnapshot else { return }
                 self.volumeSnapshot = volumes
                 self.renderVolumes(volumes)
             }
@@ -515,9 +534,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         if menu === self.menu {
-            refresh()
+            isMenuOpen = true
+            refreshAll()
         } else if menu === reclaimMenu {
             scanReclaimTargetsIfStale()
+        } else if menu === settingsMenu {
+            updateSettingsChecks()
+        }
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        if menu === self.menu {
+            isMenuOpen = false
         }
     }
 
@@ -525,7 +553,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func refreshClicked() {
         reclaimScanner.invalidateCache()
-        refresh()
+        lastVolumeEnumeration = nil
+        refreshAll()
     }
 
     @objc private func revealTarget(_ sender: NSMenuItem) {
@@ -593,7 +622,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let raw = sender.representedObject as? String,
               let display = MenuBarDisplay(rawValue: raw) else { return }
         Prefs.display = display
-        refresh()
+        refreshStatusBar()
+        updateSettingsChecks()
     }
 
     @objc private func selectInterval(_ sender: NSMenuItem) {
@@ -607,7 +637,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let gb = sender.representedObject as? Int else { return }
         Prefs.warnBelowGB = gb
         lowSpaceNotified = false
-        refresh()
+        refreshStatusBar()
+        updateSettingsChecks()
     }
 
     @objc private func toggleLaunchAtLogin() {

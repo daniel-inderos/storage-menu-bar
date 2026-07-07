@@ -15,7 +15,7 @@ struct DiskInfo {
     var usedFraction: Double { total > 0 ? Double(used) / Double(total) : 0 }
 }
 
-struct VolumeInfo {
+struct VolumeInfo: Equatable {
     let url: URL
     let name: String
     let total: Int64
