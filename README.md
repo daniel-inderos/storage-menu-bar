@@ -64,31 +64,15 @@ open StorageBar.app
 
 ### Homebrew
 
-The tap is convenient for upgrades, but today it installs the same prebuilt app
-as the release zip: ad-hoc signed, not Developer ID-signed, and not notarized.
+The tap installs the same Developer ID-signed and notarized app as the release
+zip, and is updated automatically by the release workflow.
 
 ```sh
-HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask daniel-inderos/tap/storagebar
+brew install --cask daniel-inderos/tap/storagebar
 ```
-
-`--no-quarantine` tells Homebrew not to add macOS's quarantine attribute to the
-downloaded app. That bypasses Gatekeeper's first-launch block for an
-unnotarized app; it is not an extra trust check. Homebrew has deprecated this
-flag and plans to remove it around September 2026, along with disabling casks
-that fail Gatekeeper checks.
 
 The [tap](https://github.com/daniel-inderos/homebrew-tap) is updated
 automatically by the release workflow, so `brew upgrade` picks up new versions.
-Until releases are Developer ID-signed and notarized, this path is best suited
-to people comfortable vetting the source and choosing that Gatekeeper tradeoff.
-
-If you install without `--no-quarantine` and macOS blocks the first launch, you
-can approve it in System Settings → Privacy & Security → "Open Anyway", or
-clear quarantine yourself on any macOS version:
-
-```sh
-xattr -cr /Applications/StorageBar.app
-```
 
 ### Download
 
@@ -96,18 +80,8 @@ Grab `StorageBar.zip` from the
 [latest release](https://github.com/daniel-inderos/storage-menu-bar/releases/latest),
 unzip it, and move `StorageBar.app` to `/Applications`.
 
-The app is ad-hoc signed, not Developer ID-signed, and not notarized, so macOS
-will quarantine the download. On recent macOS versions, you can approve the
-blocked first launch in System Settings → Privacy & Security → "Open Anyway".
-Or clear the quarantine attribute yourself on any macOS version:
-
-```sh
-xattr -cr /Applications/StorageBar.app
-```
-
-Until releases are Developer ID-signed and notarized, direct downloads are best
-suited to people comfortable vetting the source before trusting the prebuilt
-app.
+Release builds are signed with a Developer ID certificate, notarized by Apple,
+and stapled so Gatekeeper can validate them offline.
 
 ## Development
 
@@ -157,13 +131,11 @@ Launch at Login uses Apple's `ServiceManagement` API only when you turn on the
 menu item. The app is an `LSUIElement` menu bar app, so it has no Dock icon and
 does not install a helper daemon.
 
-Releases are ad-hoc signed by `build-app.sh` (`codesign --sign -`). Plain
-English: macOS sees a signed bundle with a stable local identity, but Apple has
-not verified the developer identity and has not notarized the build. That is
-why prebuilt downloads can be blocked by Gatekeeper until you explicitly
-approve them or remove quarantine. The app source is a handful of Swift files,
-so it is practical to audit in one sitting before deciding whether to run the
-prebuilt app.
+Release builds are signed with a Developer ID Application certificate using
+the hardened runtime, notarized by Apple, and distributed with a stapled
+notarization ticket. Gatekeeper can therefore verify both the developer
+identity and Apple's notarization result. The app source remains a handful of
+Swift files, so it is also practical to audit in one sitting.
 
 ## License
 
