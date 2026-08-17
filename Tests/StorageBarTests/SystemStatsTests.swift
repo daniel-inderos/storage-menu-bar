@@ -38,6 +38,42 @@ final class DiskInfoTests: XCTestCase {
     }
 }
 
+final class DiskSamplingTests: XCTestCase {
+    func testImportantUsageRefreshesWhenCacheIsEmpty() {
+        XCTAssertTrue(SystemStats.shouldRefreshImportantUsage(lastRefreshed: nil, now: Date(), interval: 10))
+    }
+
+    func testImportantUsageWaitsOutTheInterval() {
+        let now = Date()
+        XCTAssertFalse(SystemStats.shouldRefreshImportantUsage(
+            lastRefreshed: now.addingTimeInterval(-9),
+            now: now,
+            interval: 10
+        ))
+        XCTAssertTrue(SystemStats.shouldRefreshImportantUsage(
+            lastRefreshed: now.addingTimeInterval(-10),
+            now: now,
+            interval: 10
+        ))
+    }
+
+    func testProjectedAvailableCarriesPurgeableForward() {
+        // 400 available, 300 free → 100 purgeable. Free drops by 50; available should follow.
+        XCTAssertEqual(
+            SystemStats.projectedAvailable(lastAvailable: 400, lastFree: 300, currentFree: 250),
+            350
+        )
+    }
+
+    func testProjectedAvailableNeverDropsBelowCurrentFree() {
+        // Cache said available < free (odd snapshot); still report at least current free.
+        XCTAssertEqual(
+            SystemStats.projectedAvailable(lastAvailable: 100, lastFree: 200, currentFree: 180),
+            180
+        )
+    }
+}
+
 final class VolumeInfoTests: XCTestCase {
     func testEquatableComparesAllFields() {
         let url = URL(fileURLWithPath: "/Volumes/Test")
