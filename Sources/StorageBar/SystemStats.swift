@@ -40,24 +40,73 @@ enum SystemStats {
 
     private static var prevCPUTicks: CPUTicks?
 
-    static func disk() -> DiskInfo? {
+    /// How often to re-query Finder-style available space (includes purgeable).
+    /// `volumeAvailableCapacityForImportantUsage` goes through CacheDelete and
+    /// can cost tens to hundreds of milliseconds; doing that every 1s refresh
+    /// is what made the menu-bar item sit at 20–50% CPU.
+    private static let importantUsageMinInterval: TimeInterval = 10
+    private static var importantUsageCache: (available: Int64, free: Int64, at: Date)?
+
+    static func disk(refreshImportantUsage: Bool = false) -> DiskInfo? {
         let url = URL(fileURLWithPath: "/")
-        let keys: Set<URLResourceKey> = [
+        let cheapKeys: Set<URLResourceKey> = [
             .volumeNameKey,
             .volumeTotalCapacityKey,
-            .volumeAvailableCapacityForImportantUsageKey,
             .volumeAvailableCapacityKey,
         ]
+        let needsImportantUsage = refreshImportantUsage
+            || shouldRefreshImportantUsage(
+                lastRefreshed: importantUsageCache?.at,
+                now: Date(),
+                interval: importantUsageMinInterval
+            )
+
+        var keys = cheapKeys
+        if needsImportantUsage {
+            keys.insert(.volumeAvailableCapacityForImportantUsageKey)
+        }
         guard let values = try? url.resourceValues(forKeys: keys),
               let total = values.volumeTotalCapacity else { return nil }
-        let available = values.volumeAvailableCapacityForImportantUsage ?? Int64(values.volumeAvailableCapacity ?? 0)
         let free = Int64(values.volumeAvailableCapacity ?? 0)
+
+        let available: Int64
+        if needsImportantUsage {
+            available = values.volumeAvailableCapacityForImportantUsage ?? free
+            importantUsageCache = (available, free, Date())
+        } else if let cache = importantUsageCache {
+            available = projectedAvailable(
+                lastAvailable: cache.available,
+                lastFree: cache.free,
+                currentFree: free
+            )
+        } else {
+            available = free
+        }
+
         return DiskInfo(
             volumeName: values.volumeName ?? "Macintosh HD",
             total: Int64(total),
             available: available,
             free: free
         )
+    }
+
+    /// True when there is no cache yet, or the last CacheDelete read is older than `interval`.
+    static func shouldRefreshImportantUsage(
+        lastRefreshed: Date?,
+        now: Date,
+        interval: TimeInterval
+    ) -> Bool {
+        guard let lastRefreshed else { return true }
+        return now.timeIntervalSince(lastRefreshed) >= interval
+    }
+
+    /// Carry the last purgeable estimate forward when only cheap free space has changed.
+    /// A large copy updates `free` immediately; purgeable space does not, so
+    /// `available ≈ free + lastPurgeable` stays Finder-accurate between CacheDelete reads.
+    static func projectedAvailable(lastAvailable: Int64, lastFree: Int64, currentFree: Int64) -> Int64 {
+        let lastPurgeable = max(0, lastAvailable - lastFree)
+        return currentFree + lastPurgeable
     }
 
     /// Mounted, user-visible volumes other than the startup disk.

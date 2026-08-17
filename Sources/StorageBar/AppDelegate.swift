@@ -333,8 +333,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// The only work needed while the menu is closed: the status-bar title
     /// and the low-space warning both derive from the startup disk alone.
-    private func refreshStatusBar() {
-        if let disk = SystemStats.disk() {
+    private func refreshStatusBar(refreshImportantUsage: Bool = false) {
+        if let disk = SystemStats.disk(refreshImportantUsage: refreshImportantUsage) {
             updateStatusButton(with: disk)
             checkLowSpace(disk)
             updateStorageItems(with: disk)
@@ -343,8 +343,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func refreshAll() {
-        refreshStatusBar()
+    private func refreshAll(refreshImportantUsage: Bool = false) {
+        refreshStatusBar(refreshImportantUsage: refreshImportantUsage)
 
         refreshVolumes()
 
@@ -364,14 +364,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateStatusButton(with disk: DiskInfo) {
         guard let button = statusItem.button else { return }
-        button.title = StatusPresentation.title(for: disk, display: Prefs.display)
+        let title = StatusPresentation.title(for: disk, display: Prefs.display)
+        if button.title != title {
+            button.title = title
+        }
+        let tint: NSColor?
         switch StatusPresentation.severity(forAvailableBytes: disk.available, warnBelowGB: Prefs.warnBelowGB) {
         case .critical:
-            button.contentTintColor = .systemRed
+            tint = .systemRed
         case .warning:
-            button.contentTintColor = .systemOrange
+            tint = .systemOrange
         case .normal:
-            button.contentTintColor = nil
+            tint = nil
+        }
+        if button.contentTintColor != tint {
+            button.contentTintColor = tint
         }
     }
 
@@ -535,7 +542,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         if menu === self.menu {
             isMenuOpen = true
-            refreshAll()
+            refreshAll(refreshImportantUsage: true)
         } else if menu === reclaimMenu {
             scanReclaimTargetsIfStale()
         } else if menu === settingsMenu {
@@ -554,7 +561,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func refreshClicked() {
         reclaimScanner.invalidateCache()
         lastVolumeEnumeration = nil
-        refreshAll()
+        refreshAll(refreshImportantUsage: true)
     }
 
     @objc private func revealTarget(_ sender: NSMenuItem) {
